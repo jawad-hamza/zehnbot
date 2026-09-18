@@ -1,0 +1,11 @@
+{$DOMAIN} {
+	encode zstd gzip
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		-Server
+	}
+
+	# nginx serves the dashboard and proxies /api and /static to the backend
+	reverse_proxy admin:80
+}

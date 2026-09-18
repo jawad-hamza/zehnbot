@@ -12,17 +12,30 @@ from app.database import Base
 import app.models  # noqa: F401 — ensures all models register with Base.metadata
 
 config = context.config
-config.set_main_option("sqlalchemy.url", settings.DATABASE_URL)
+# configparser treats "%" as interpolation, and passwords may contain it
+config.set_main_option("sqlalchemy.url", settings.DATABASE_URL.replace("%", "%%"))
 
 if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+    # keep the application's loggers alive when migrations run inside the app process
+    fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 target_metadata = Base.metadata
+
+# Postgres-only objects created by hand in migration 0002 and deliberately absent from the models.
+# Without this, `alembic revision --autogenerate` would propose dropping the search index.
+UNMAPPED = {
+    ("column", "search_vector"), ("index", "ix_knowledge_chunks_search"),
+    ("column", "embedding"),   # pgvector, added by scripts/migrate.py when the extension exists
+}
+
+
+def include_object(obj, name, type_, reflected, compare_to):
+    return (type_, name) not in UNMAPPED
 
 
 def run_migrations_offline() -> None:
     url = config.get_main_option("sqlalchemy.url")
-    context.configure(url=url, target_metadata=target_metadata, literal_binds=True)
+    context.configure(url=url, target_metadata=target_metadata, literal_binds=True, include_object=include_object)
     with context.begin_transaction():
         context.run_migrations()
 
@@ -34,7 +47,7 @@ def run_migrations_online() -> None:
         poolclass=pool.NullPool,
     )
     with connectable.connect() as connection:
-        context.configure(connection=connection, target_metadata=target_metadata)
+        context.configure(connection=connection, target_metadata=target_metadata, include_object=include_object)
         with context.begin_transaction():
             context.run_migrations()
 

@@ -1,14 +1,17 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useParams, Link } from "react-router-dom";
-import { api } from "../api/client";
+import { api, errorDetail } from "../api/client";
 import ClientForm from "../components/ClientForm";
-import type { Client } from "../types";
+import { useAuthStore } from "../store/authStore";
+import type { Client, ClientPayload, Tenant } from "../types";
 
 export default function ClientEditPage() {
   const { id } = useParams<{ id: string }>();
   const isNew = !id;
   const navigate = useNavigate();
+  const isSuperadmin = useAuthStore((s) => s.me?.role === "superadmin");
   const [client, setClient] = useState<Client | null>(null);
+  const [tenants, setTenants] = useState<Tenant[] | undefined>(undefined);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [copied, setCopied] = useState(false);
@@ -19,7 +22,14 @@ export default function ClientEditPage() {
     }
   }, [id, isNew]);
 
-  async function handleSubmit(data: Partial<Client>) {
+  // The super admin has no tenant of their own, so must say whose bot this is
+  useEffect(() => {
+    if (isNew && isSuperadmin) {
+      api.get("/admin/tenants").then((r) => setTenants(r.data));
+    }
+  }, [isNew, isSuperadmin]);
+
+  async function handleSubmit(data: ClientPayload) {
     setLoading(true);
     setError("");
     try {
@@ -30,8 +40,8 @@ export default function ClientEditPage() {
       }
       navigate("/clients");
     } catch (err: unknown) {
-      const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
-      setError(msg || "Failed to save client.");
+      setError(errorDetail(err, "Failed to save the bot."));
+      window.scrollTo({ top: 0, behavior: "smooth" });
     } finally {
       setLoading(false);
     }
@@ -56,10 +66,10 @@ export default function ClientEditPage() {
   return (
     <div>
       <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 28 }}>
-        <Link to="/clients" style={{ color: "#64748b", textDecoration: "none", fontSize: 14 }}>← Clients</Link>
-        <h1 style={{ fontSize: 20, fontWeight: 700 }}>{isNew ? "New Client" : `Edit — ${client?.name}`}</h1>
+        <Link to="/clients" style={{ color: "#64748b", textDecoration: "none", fontSize: 14 }}>← Bots</Link>
+        <h1 style={{ fontSize: 20, fontWeight: 700 }}>{isNew ? "New Bot" : `Edit — ${client?.name}`}</h1>
       </div>
-      {error && <p style={{ color: "#dc2626", marginBottom: 16, fontSize: 13 }}>{error}</p>}
+      {error && <p style={{ color: "#dc2626", marginBottom: 16, fontSize: 13, whiteSpace: "pre-wrap" }}>{error}</p>}
 
       {!isNew && client && (
         <div style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 12, padding: "16px 20px", marginBottom: 24, maxWidth: 560 }}>
@@ -95,7 +105,8 @@ export default function ClientEditPage() {
         initial={client ?? {}}
         onSubmit={handleSubmit}
         loading={loading}
-        submitLabel={isNew ? "Create Client" : "Save Changes"}
+        submitLabel={isNew ? "Create Bot" : "Save Changes"}
+        tenants={tenants}
       />
     </div>
   );

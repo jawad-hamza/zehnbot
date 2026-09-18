@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useParams, Link } from "react-router-dom";
-import axios from "axios";
-import { api } from "../api/client";
+import { api, errorDetail } from "../api/client";
 import type { Client } from "../types";
 
 type Msg = { role: "user" | "assistant"; content: string };
@@ -37,16 +36,15 @@ export default function TestChatPage() {
     setMessages(next);
     setLoading(true);
     try {
-      const res = await axios.post("/api/chat/message", {
-        client_id: client.client_id,
+      // Authenticated owner endpoint: works from the dashboard regardless of the bot's domain,
+      // and reports provider errors (bad key, unknown model) that visitors never see.
+      const res = await api.post(`/admin/clients/${id}/test-chat`, {
         session_id: sessionRef.current,
         message: text,
-        history: next.slice(0, -1),
       });
       setMessages([...next, { role: "assistant", content: res.data.reply }]);
     } catch (err: unknown) {
-      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
-      setError(detail || "Request failed");
+      setError(errorDetail(err, "Request failed"));
     } finally {
       setLoading(false);
     }
@@ -63,10 +61,11 @@ export default function TestChatPage() {
   return (
     <div>
       <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 20 }}>
-        <Link to="/clients" style={{ color: "#64748b", textDecoration: "none", fontSize: 14 }}>← Clients</Link>
+        <Link to="/clients" style={{ color: "#64748b", textDecoration: "none", fontSize: 14 }}>← Bots</Link>
         <h1 style={{ fontSize: 20, fontWeight: 700 }}>Test — {client.name}</h1>
         <span style={{ fontSize: 12, color: "#64748b", background: "#f1f5f9", padding: "2px 10px", borderRadius: 999 }}>
-          {client.ai_provider}{client.ai_model ? ` · ${client.ai_model}` : ""}
+          {/* without its own key the bot's provider settings are not used: the platform's AI answers */}
+          {client.ai_api_key_set ? `${client.ai_provider}${client.ai_model ? ` · ${client.ai_model}` : ""}` : "platform AI"}
         </span>
         <button
           onClick={resetConversation}

@@ -1,8 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { useParams, Link } from "react-router-dom";
-import { api } from "../api/client";
+import { api, errorDetail } from "../api/client";
+import type { IngestJob } from "../types";
 
 type Chunk = { id: string; chunk_text: string; chunk_index: number; source_label: string };
+
+const POLL_MS = 2500;
 
 export default function KnowledgePage() {
   const { id } = useParams<{ id: string }>();
@@ -33,20 +36,44 @@ export default function KnowledgePage() {
 
   useEffect(() => { refresh(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [id]);
 
+  // Stop polling if the page is left while a crawl is still running
+  const pollTimer = useRef<number | undefined>(undefined);
+  useEffect(() => () => window.clearTimeout(pollTimer.current), []);
+
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
     setSaving(true);
     setMsg("");
     try {
-      const res = await api.post(`/admin/clients/${id}/knowledge`, { raw_text: rawText, source_label: label });
-      setMsg(`Replaced — ${res.data.chunks_created} chunks created.`);
+      const res = await api.post(`/admin/clients/${id}/knowledge`, { raw_text: rawText, source_label: label.trim() || "manual" });
+      setMsg(`Saved — ${res.data.chunks_created} chunks in "${label.trim() || "manual"}".`);
       setRawText("");
       await refresh();
-    } catch {
-      setMsg("Failed to save knowledge.");
+    } catch (err: unknown) {
+      setMsg(errorDetail(err, "Failed to save knowledge."));
     } finally {
       setSaving(false);
     }
+  }
+
+  // The crawl runs on the server in the background; we poll its job until it settles
+  function pollJob(jobId: string) {
+    pollTimer.current = window.setTimeout(async () => {
+      try {
+        const job: IngestJob = (await api.get(`/admin/clients/${id}/knowledge/jobs/${jobId}`)).data;
+        if (job.status === "pending" || job.status === "running") return pollJob(jobId);
+        if (job.status === "done") {
+          setCrawlMsg(`Crawled ${job.pages_crawled} page(s), added ${job.chunks_created} chunks.${job.error ? `\n${job.error}` : ""}`);
+          setCrawlUrl("");
+        } else {
+          setCrawlMsg(job.error || "Crawl failed.");
+        }
+      } catch (err: unknown) {
+        setCrawlMsg(errorDetail(err, "Lost track of the crawl. Reload the page to see what was added."));
+      }
+      setCrawling(false);
+      await refresh();
+    }, POLL_MS);
   }
 
   async function handleCrawl(e: React.FormEvent) {
@@ -59,15 +86,17 @@ export default function KnowledgePage() {
         url: crawlUrl.trim(),
         max_pages: crawlMaxPages,
       });
-      setCrawlMsg(`Crawled ${res.data.pages_crawled} page(s), added ${res.data.chunks_created} chunks.`);
-      setCrawlUrl("");
-      await refresh();
+      pollJob(res.data.id);
     } catch (err: unknown) {
-      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
-      setCrawlMsg(detail || "Crawl failed.");
-    } finally {
+      setCrawlMsg(errorDetail(err, "Crawl failed."));
       setCrawling(false);
     }
+  }
+
+  async function handleDeleteSource(source: string) {
+    if (!confirm(`Delete the source "${source}"?`)) return;
+    await api.delete(`/admin/clients/${id}/knowledge`, { params: { source_label: source } });
+    await refresh();
   }
 
   async function handleIngestUrls(e: React.FormEvent) {
@@ -83,8 +112,7 @@ export default function KnowledgePage() {
         const res = await api.post(`/admin/clients/${id}/knowledge/url`, { url });
         total += res.data.chunks_created;
       } catch (err: unknown) {
-        const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail || "failed";
-        errors.push(`${url}: ${detail}`);
+        errors.push(`${url}: ${errorDetail(err, "failed")}`);
       }
     }
     setUrlMsg(errors.length ? `Added ${total} chunks. ${errors.length} failed:\n${errors.join("\n")}` : `Added ${total} chunks from ${list.length} URL(s).`);
@@ -108,8 +136,7 @@ export default function KnowledgePage() {
         });
         total += res.data.chunks_created;
       } catch (err: unknown) {
-        const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail || "failed";
-        errors.push(`${file.name}: ${detail}`);
+        errors.push(`${file.name}: ${errorDetail(err, "failed")}`);
       }
     }
     setFileMsg(errors.length ? `Added ${total} chunks. ${errors.length} failed:\n${errors.join("\n")}` : `Added ${total} chunks from ${files.length} file(s).`);
@@ -140,7 +167,7 @@ export default function KnowledgePage() {
   return (
     <div>
       <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 24 }}>
-        <Link to="/clients" style={{ color: "#64748b", textDecoration: "none", fontSize: 14 }}>← Clients</Link>
+        <Link to="/clients" style={{ color: "#64748b", textDecoration: "none", fontSize: 14 }}>← Bots</Link>
         <h1 style={{ fontSize: 20, fontWeight: 700 }}>Knowledge Base</h1>
         <span style={{ color: "#64748b", fontSize: 13 }}>{chunks.length} chunks · {sources.length} source(s)</span>
       </div>
@@ -154,7 +181,10 @@ export default function KnowledgePage() {
               {sources.map(([label, count]) => (
                 <li key={label} style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 13 }}>
                   <span style={{ background: "#f1f5f9", color: "#334155", padding: "2px 8px", borderRadius: 4, fontSize: 11, fontWeight: 600, minWidth: 40, textAlign: "center" }}>{count}</span>
-                  <span style={{ color: "#475569", wordBreak: "break-all" }}>{label}</span>
+                  <span style={{ color: "#475569", wordBreak: "break-all", flex: 1 }}>{label}</span>
+                  <button type="button" onClick={() => handleDeleteSource(label)} title="Delete this source" style={{ background: "none", border: "none", color: "#dc2626", cursor: "pointer", fontSize: 12 }}>
+                    Delete
+                  </button>
                 </li>
               ))}
             </ul>
@@ -168,7 +198,7 @@ export default function KnowledgePage() {
         <div style={box}>
           <div style={box_title}>Crawl entire website</div>
           <div style={box_hint}>
-            Fetches the URL, follows every same-domain link (e.g. /about, /pricing, /club.html), extracts text from each page, and adds it to this bot's knowledge. Goes up to the max page count or 2 minutes, whichever comes first.
+            Fetches the URL, follows every same-domain link (e.g. /about, /pricing, /club.html), extracts text from each page, and adds it to this bot's knowledge. Goes up to the max page count or 2 minutes, whichever comes first. Runs in the background — crawling the same site again refreshes its pages.
           </div>
           <form onSubmit={handleCrawl} style={{ display: "flex", flexDirection: "column", gap: 8 }}>
             <div style={{ display: "flex", gap: 8 }}>
@@ -231,11 +261,11 @@ export default function KnowledgePage() {
           {urlMsg && <div style={{ fontSize: 12, color: urlMsg.startsWith("Added") && !urlMsg.includes("failed") ? "#16a34a" : "#dc2626", marginTop: 8, whiteSpace: "pre-wrap" }}>{urlMsg}</div>}
         </div>
 
-        {/* Manual text — REPLACES all knowledge */}
+        {/* Manual text — one source per label */}
         <form onSubmit={handleSave} style={{ ...box, background: "#fff" }}>
-          <div style={box_title}>Paste text (replaces all knowledge)</div>
+          <div style={box_title}>Paste text</div>
           <div style={box_hint}>
-            Warning: saving here <strong>wipes all existing sources</strong> (including uploads and URLs) and creates one new source with the label below. Use this for a clean slate.
+            Saved as a source with the label below. Saving again with the <strong>same label</strong> replaces that source; all other sources (uploads, URLs, crawls) are kept.
           </div>
           <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8 }}>
             <span style={{ fontSize: 12, color: "#475569" }}>Source label:</span>
@@ -249,9 +279,9 @@ export default function KnowledgePage() {
           />
           <div style={{ display: "flex", gap: 12, alignItems: "center", marginTop: 10 }}>
             <button type="submit" disabled={saving || !rawText.trim()} style={{ background: "#2563eb", color: "#fff", border: "none", borderRadius: 8, padding: "9px 22px", cursor: "pointer", fontSize: 14, fontWeight: 600, opacity: saving || !rawText.trim() ? 0.6 : 1 }}>
-              {saving ? "Saving…" : "Replace All With This"}
+              {saving ? "Saving…" : "Save Source"}
             </button>
-            {msg && <span style={{ fontSize: 13, color: msg.includes("Failed") ? "#dc2626" : "#16a34a" }}>{msg}</span>}
+            {msg && <span style={{ fontSize: 13, color: msg.startsWith("Saved") || msg.startsWith("Knowledge deleted") ? "#16a34a" : "#dc2626" }}>{msg}</span>}
           </div>
         </form>
       </div>

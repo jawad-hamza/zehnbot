@@ -11,11 +11,12 @@ class Lead(Base):
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     client_id = Column(UUID(as_uuid=True), ForeignKey("clients.id", ondelete="CASCADE"), nullable=False, index=True)
-    conversation_id = Column(UUID(as_uuid=True), ForeignKey("conversations.id", ondelete="SET NULL"), nullable=True)
+    conversation_id = Column(UUID(as_uuid=True), ForeignKey("conversations.id", ondelete="SET NULL"), nullable=True, index=True)
     name = Column(String(255), nullable=True)
     email = Column(String(255), nullable=True, index=True)
     phone = Column(String(50), nullable=True)
     raw_context = Column(Text, nullable=True)
+    source = Column(String(16), nullable=False, default="form", server_default="form")   # form | chat
     captured_at = Column(DateTime(timezone=True), server_default=func.now())
 
     client = relationship("Client", back_populates="leads")

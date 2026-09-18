@@ -1,11 +1,14 @@
-import { useState } from "react";
-import type { Client } from "../types";
+import { useEffect, useState } from "react";
+import { api } from "../api/client";
+import type { AiProvider, Client, ClientPayload, Tenant } from "../types";
 
 interface Props {
   initial?: Partial<Client>;
-  onSubmit: (data: Partial<Client>) => Promise<void>;
+  onSubmit: (data: ClientPayload) => Promise<void>;
   loading: boolean;
   submitLabel: string;
+  /** Given to the super admin when creating a bot: which customer it belongs to. */
+  tenants?: Tenant[];
 }
 
 const field: React.CSSProperties = { display: "flex", flexDirection: "column", gap: 4 };
@@ -24,12 +27,10 @@ const textarea: React.CSSProperties = { ...input, minHeight: 100, resize: "verti
 const sectionTitle: React.CSSProperties = { fontSize: 13, fontWeight: 700, color: "#334155", marginBottom: 10 };
 const sectionWrap: React.CSSProperties = { borderTop: "1px solid #e2e8f0", paddingTop: 14, marginTop: 4 };
 
-const PROVIDERS = [
-  { value: "openai",    label: "OpenAI",    defaultModel: "gpt-4o-mini",           hint: "e.g. gpt-4o-mini, gpt-4o, gpt-4-turbo" },
-  { value: "anthropic", label: "Anthropic", defaultModel: "claude-3-5-haiku-latest", hint: "e.g. claude-3-5-sonnet-latest, claude-3-5-haiku-latest" },
-  { value: "gemini",    label: "Google Gemini", defaultModel: "gemini-2.0-flash",   hint: "e.g. gemini-2.0-flash, gemini-2.0-flash-lite, gemini-2.5-flash" },
-  { value: "deepseek",  label: "DeepSeek",  defaultModel: "deepseek-chat",          hint: "e.g. deepseek-chat, deepseek-reasoner" },
-  { value: "grok",      label: "xAI Grok",  defaultModel: "grok-2-latest",          hint: "e.g. grok-2-latest, grok-beta" },
+// Shown until the real catalogue arrives from GET /admin/providers (the backend owns the list:
+// backend/app/services/providers.py). Adding a provider there needs no change here.
+const FALLBACK_PROVIDERS: AiProvider[] = [
+  { id: "deepseek", label: "DeepSeek", default_model: "deepseek-flash", model_hint: "", keys_url: "", needs_base_url: false },
 ];
 
 const FONT_PRESETS = [
@@ -41,7 +42,10 @@ const FONT_PRESETS = [
   { label: "Monospace", value: 'ui-monospace, "SF Mono", Menlo, monospace' },
 ];
 
-export default function ClientForm({ initial = {}, onSubmit, loading, submitLabel }: Props) {
+export default function ClientForm({ initial = {}, onSubmit, loading, submitLabel, tenants }: Props) {
+  const isNew = !initial.id;
+  const [tenantId, setTenantId] = useState("");
+  const [removeKey, setRemoveKey] = useState(false);
   const [form, setForm] = useState({
     name: initial.name ?? "",
     domain: initial.domain ?? "",
@@ -53,30 +57,56 @@ export default function ClientForm({ initial = {}, onSubmit, loading, submitLabe
     widget_position: initial.widget_position ?? "bottom-right",
     font_family: initial.font_family ?? "",
     custom_css: initial.custom_css ?? "",
-    ai_provider: initial.ai_provider ?? "openai",
+    ai_provider: initial.ai_provider ?? "deepseek",
     ai_model: initial.ai_model ?? "",
-    ai_api_key: initial.ai_api_key ?? "",
+    ai_base_url: initial.ai_base_url ?? "",
+    ai_api_key: "",   // never pre-filled: the server does not send stored keys back
     is_active: initial.is_active ?? true,
   });
 
   const set = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) =>
     setForm((f) => ({ ...f, [k]: e.target.value }));
 
-  const currentProvider = PROVIDERS.find((p) => p.value === form.ai_provider) ?? PROVIDERS[0];
+  const [providers, setProviders] = useState<AiProvider[]>(FALLBACK_PROVIDERS);
+  useEffect(() => {
+    api.get("/admin/providers").then((r) => setProviders(r.data)).catch(() => undefined);
+  }, []);
+
+  // A bot saved with a provider that is no longer offered still shows what it has
+  const currentProvider: AiProvider =
+    providers.find((p) => p.id === form.ai_provider) ??
+    { id: form.ai_provider, label: form.ai_provider, default_model: null, model_hint: "", keys_url: "", needs_base_url: false };
+  const providerOptions = providers.some((p) => p.id === currentProvider.id) ? providers : [currentProvider, ...providers];
+  const modelRequired = !currentProvider.default_model;
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    await onSubmit({
-      ...form,
+    const { ai_api_key, ...rest } = form;
+    const payload: ClientPayload = {
+      ...rest,
       ai_model: form.ai_model.trim() || null,
-      ai_api_key: form.ai_api_key || null,
+      ai_base_url: currentProvider.needs_base_url ? form.ai_base_url.trim() || null : null,
       font_family: form.font_family.trim() || null,
       custom_css: form.custom_css.trim() || null,
-    });
+    };
+    // Typed a key = replace it. Ticked "remove" = send "". Otherwise leave the field out so the stored key survives.
+    if (ai_api_key.trim()) payload.ai_api_key = ai_api_key.trim();
+    else if (removeKey) payload.ai_api_key = "";
+    if (isNew && tenants && tenantId) payload.tenant_id = tenantId;
+    await onSubmit(payload);
   }
 
   return (
     <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 18, maxWidth: 620 }}>
+      {isNew && tenants && (
+        <div style={field}>
+          <label style={label}>Tenant * (the customer this bot belongs to)</label>
+          <select style={input} value={tenantId} onChange={(e) => setTenantId(e.target.value)} required>
+            <option value="">Choose a tenant…</option>
+            {tenants.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+          </select>
+        </div>
+      )}
       <div style={field}>
         <label style={label}>Company Name *</label>
         <input style={input} value={form.name} onChange={set("name")} required placeholder="Acme Corp" />
@@ -84,6 +114,9 @@ export default function ClientForm({ initial = {}, onSubmit, loading, submitLabe
       <div style={field}>
         <label style={label}>Domain *</label>
         <input style={input} value={form.domain} onChange={set("domain")} required placeholder="acme.com" />
+        <span style={{ fontSize: 12, color: "#94a3b8" }}>
+          The widget only works on this website (subdomains and www included). Separate several with commas, e.g. <code>acme.com, acme.co.uk</code>. Add <code>localhost</code> while testing locally.
+        </span>
       </div>
       <div style={field}>
         <label style={label}>Client ID * (unique slug, used in embed script)</label>
@@ -100,21 +133,55 @@ export default function ClientForm({ initial = {}, onSubmit, loading, submitLabe
           <div style={field}>
             <label style={label}>Provider</label>
             <select style={input} value={form.ai_provider} onChange={set("ai_provider")}>
-              {PROVIDERS.map((p) => <option key={p.value} value={p.value}>{p.label}</option>)}
+              {providerOptions.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
             </select>
           </div>
           <div style={field}>
-            <label style={label}>Model (optional)</label>
-            <input style={input} value={form.ai_model} onChange={set("ai_model")} placeholder={currentProvider.defaultModel} />
+            <label style={label}>{modelRequired ? "Model" : "Model (optional)"}</label>
+            <input style={input} value={form.ai_model} onChange={set("ai_model")} placeholder={currentProvider.default_model ?? "model name"} maxLength={100} />
           </div>
         </div>
-        <div style={{ fontSize: 12, color: "#94a3b8", marginTop: 4 }}>{currentProvider.hint}</div>
+        {currentProvider.needs_base_url && (
+          <div style={{ ...field, marginTop: 12 }}>
+            <label style={label}>Endpoint base URL *</label>
+            <input style={input} type="url" value={form.ai_base_url} onChange={set("ai_base_url")} placeholder="https://llm.example.com/v1" maxLength={500} required />
+            <span style={{ fontSize: 12, color: "#94a3b8" }}>
+              Any server that speaks the OpenAI chat-completions API (LiteLLM, vLLM, a company gateway…). It must be reachable from the internet over https.
+            </span>
+          </div>
+        )}
+        <div style={{ fontSize: 12, color: "#94a3b8", marginTop: 4 }}>
+          {currentProvider.default_model ? `Leave the model blank to use ${currentProvider.default_model}. ` : ""}
+          {currentProvider.model_hint}
+          {currentProvider.keys_url && (
+            <> · <a href={currentProvider.keys_url} target="_blank" rel="noopener noreferrer" style={{ color: "#2563eb" }}>Get an API key</a></>
+          )}
+        </div>
+        <div style={{ fontSize: 12, color: "#94a3b8", marginTop: 4 }}>
+          These settings apply once you add your own API key below. Without a key, the platform's AI answers for this bot.
+        </div>
       </div>
 
       <div style={field}>
-        <label style={label}>API Key</label>
-        <input style={input} value={form.ai_api_key ?? ""} onChange={set("ai_api_key")} placeholder="Paste provider API key" type="password" autoComplete="off" />
-        <span style={{ fontSize: 12, color: "#94a3b8" }}>This key is used only for this bot. Each bot can use a different provider and key.</span>
+        <label style={label}>API Key (optional)</label>
+        <input
+          style={input}
+          value={form.ai_api_key}
+          onChange={(e) => { setRemoveKey(false); set("ai_api_key")(e); }}
+          placeholder={initial.ai_api_key_set ? `Key saved (${initial.ai_api_key_hint ?? "…"}). Type a new one to replace it` : "Paste provider API key"}
+          type="password"
+          autoComplete="new-password"
+          disabled={removeKey}
+        />
+        {initial.ai_api_key_set && (
+          <label style={{ fontSize: 12, color: "#475569", display: "flex", alignItems: "center", gap: 6 }}>
+            <input type="checkbox" checked={removeKey} onChange={(e) => { setRemoveKey(e.target.checked); if (e.target.checked) setForm((f) => ({ ...f, ai_api_key: "" })); }} />
+            Remove the saved key
+          </label>
+        )}
+        <span style={{ fontSize: 12, color: "#94a3b8" }}>
+          With your own key, this bot uses the provider and model above and is not limited by your plan's message quota. Without one, it runs on the platform's AI and counts against the quota. Keys are stored encrypted and are never shown again.
+        </span>
       </div>
 
       <div style={field}>

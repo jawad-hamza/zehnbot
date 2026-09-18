@@ -1,26 +1,35 @@
-from pydantic import BaseModel
-from typing import List
-from datetime import datetime
 import uuid
+from datetime import datetime
+from typing import List, Optional
+
+from pydantic import BaseModel, Field
 
 
 class KnowledgeUpload(BaseModel):
-    raw_text: str
-    source_label: str = "manual"
+    raw_text: str = Field(min_length=1, max_length=2_000_000)
+    source_label: str = Field(default="manual", min_length=1, max_length=255)
 
 
 class KnowledgeUrlIngest(BaseModel):
-    url: str
+    url: str = Field(min_length=8, max_length=2048)
 
 
 class KnowledgeCrawlRequest(BaseModel):
+    url: str = Field(min_length=8, max_length=2048)
+    max_pages: int = Field(default=25, ge=1, le=50)
+
+
+class IngestJobResponse(BaseModel):
+    id: uuid.UUID
+    status: str
     url: str
-    max_pages: int = 25
-
-
-class KnowledgeCrawlResponse(BaseModel):
     pages_crawled: int
     chunks_created: int
+    error: Optional[str] = None
+    created_at: datetime
+    finished_at: Optional[datetime] = None
+
+    model_config = {"from_attributes": True}
 
 
 class KnowledgeChunkResponse(BaseModel):

@@ -1,5 +1,5 @@
 import uuid
-from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey
+from sqlalchemy import Boolean, Column, Index, false, Integer, String, Text, DateTime, ForeignKey, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
@@ -8,6 +8,7 @@ from app.database import Base
 
 class Conversation(Base):
     __tablename__ = "conversations"
+    __table_args__ = (UniqueConstraint("client_id", "session_id", name="uq_conversation_client_session"),)
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     client_id = Column(UUID(as_uuid=True), ForeignKey("clients.id", ondelete="CASCADE"), nullable=False, index=True)
@@ -22,12 +23,17 @@ class Conversation(Base):
 
 class Message(Base):
     __tablename__ = "messages"
+    # serves the "last N messages of this conversation" lookup made on every chat turn
+    __table_args__ = (Index("ix_messages_conversation_created", "conversation_id", "created_at"),)
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     conversation_id = Column(UUID(as_uuid=True), ForeignKey("conversations.id", ondelete="CASCADE"), nullable=False, index=True)
     role = Column(String(10), nullable=False)
     content = Column(Text, nullable=False)
     tokens_used = Column(Integer, nullable=True)
+    # Set on an assistant reply when the bot said it could not answer. Drives the dashboard's
+    # "questions your bot couldn't answer" list, i.e. what knowledge to add next.
+    unanswered = Column(Boolean, nullable=False, default=False, server_default=false())
     created_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
 
     conversation = relationship("Conversation", back_populates="messages")

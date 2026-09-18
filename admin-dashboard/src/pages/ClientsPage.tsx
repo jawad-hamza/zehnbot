@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api/client";
+import { useAuthStore } from "../store/authStore";
 import type { ClientListItem } from "../types";
 
 export default function ClientsPage() {
@@ -8,6 +9,7 @@ export default function ClientsPage() {
   const [loading, setLoading] = useState(true);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [togglingId, setTogglingId] = useState<string | null>(null);
+  const isSuperadmin = useAuthStore((s) => s.me?.role === "superadmin");
 
   useEffect(() => {
     api.get("/admin/clients").then((r) => { setClients(r.data); setLoading(false); });
@@ -40,22 +42,27 @@ export default function ClientsPage() {
   return (
     <div>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 24 }}>
-        <h1 style={{ fontSize: 22, fontWeight: 700 }}>Clients</h1>
+        <h1 style={{ fontSize: 22, fontWeight: 700 }}>Bots</h1>
         <Link to="/clients/new" style={{ background: "#2563eb", color: "#fff", padding: "9px 20px", borderRadius: 8, textDecoration: "none", fontSize: 14, fontWeight: 600 }}>
-          + New Client
+          + New Bot
         </Link>
       </div>
 
       {loading && <p style={{ color: "#64748b" }}>Loading…</p>}
 
       {!loading && clients.length === 0 && (
-        <p style={{ color: "#64748b" }}>No clients yet. Create your first one above.</p>
+        <p style={{ color: "#64748b" }}>No bots yet. Create your first one above.</p>
       )}
 
       {clients.map((c) => (
         <div key={c.id} style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 12, padding: "18px 22px", marginBottom: 12, display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
           <div style={{ flex: 1, minWidth: 220 }}>
-            <div style={{ fontWeight: 600, fontSize: 15 }}>{c.name}</div>
+            <div style={{ fontWeight: 600, fontSize: 15 }}>
+              {c.name}
+              {isSuperadmin && c.tenant_name && (
+                <span style={{ marginLeft: 8, background: "#ede9fe", color: "#6d28d9", padding: "1px 8px", borderRadius: 999, fontSize: 11, fontWeight: 600 }}>{c.tenant_name}</span>
+              )}
+            </div>
             <div style={{ color: "#64748b", fontSize: 13 }}>
               {c.domain} &nbsp;·&nbsp; <code style={{ background: "#f1f5f9", padding: "1px 6px", borderRadius: 4, fontSize: 12 }}>{c.client_id}</code>
             </div>
@@ -85,6 +92,7 @@ export default function ClientsPage() {
             <Link to={`/clients/${c.id}/knowledge`} style={btnStyle("#f1f5f9", "#1e293b")}>Knowledge</Link>
             <Link to={`/clients/${c.id}/conversations`} style={btnStyle("#f1f5f9", "#1e293b")}>Chats</Link>
             <Link to={`/clients/${c.id}/leads`} style={btnStyle("#f1f5f9", "#1e293b")}>Leads</Link>
+            <Link to={`/clients/${c.id}/insights`} style={btnStyle("#eff6ff", "#1d4ed8")}>Insights</Link>
           </div>
         </div>
       ))}

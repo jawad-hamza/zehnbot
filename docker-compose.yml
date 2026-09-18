@@ -1,17 +1,31 @@
-version: "3.9"
+# Local / plain HTTP:   docker compose up -d --build          -> http://localhost:3001
+# Production with TLS:  docker compose --profile tls up -d --build   (set DOMAIN, BIND_ADDR stays 127.0.0.1)
 
 services:
   db:
-    image: postgres:16-alpine
+    # postgres:16-alpine plus the pgvector extension (see db/Dockerfile); same data volume as before
+    build:
+      context: ./db
     restart: unless-stopped
     environment:
       POSTGRES_USER: chatbot
-      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?set DB_PASSWORD in .env}
       POSTGRES_DB: chatbotdb
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U chatbot"]
+      test: ["CMD-SHELL", "pg_isready -U chatbot -d chatbotdb"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    # rate-limit counters only: no persistence needed, and never let it eat the host's memory
+    command: ["redis-server", "--save", "", "--appendonly", "no", "--maxmemory", "64mb", "--maxmemory-policy", "allkeys-lru"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
       interval: 5s
       timeout: 3s
       retries: 10
@@ -24,15 +38,41 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      redis:
+        condition: service_healthy
     environment:
+      ENVIRONMENT: ${ENVIRONMENT:-production}
       DATABASE_URL: postgresql://chatbot:${DB_PASSWORD}@db:5432/chatbotdb
-      SECRET_KEY: ${SECRET_KEY}
-      OPENAI_API_KEY: ${OPENAI_API_KEY}
-      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS}
+      REDIS_URL: redis://redis:6379/0
+      SECRET_KEY: ${SECRET_KEY:?set SECRET_KEY in .env}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:?set ENCRYPTION_KEY in .env}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-}
       ADMIN_SEED_EMAIL: ${ADMIN_SEED_EMAIL}
       ADMIN_SEED_PASSWORD: ${ADMIN_SEED_PASSWORD}
-    ports:
-      - "8001:8000"
+      ALLOW_SIGNUP: ${ALLOW_SIGNUP:-false}
+      DEFAULT_SIGNUP_PLAN: ${DEFAULT_SIGNUP_PLAN:-free}
+      PLATFORM_AI_PROVIDER: ${PLATFORM_AI_PROVIDER:-deepseek}
+      PLATFORM_AI_MODEL: ${PLATFORM_AI_MODEL:-}
+      PLATFORM_AI_API_KEY: ${PLATFORM_AI_API_KEY:-}
+      PLATFORM_AI_BASE_URL: ${PLATFORM_AI_BASE_URL:-}
+      ALLOW_CUSTOM_AI_ENDPOINTS: ${ALLOW_CUSTOM_AI_ENDPOINTS:-true}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ENABLE_EMBEDDINGS: ${ENABLE_EMBEDDINGS:-true}
+      EMBEDDING_API_KEY: ${EMBEDDING_API_KEY:-}
+      EMBEDDING_BASE_URL: ${EMBEDDING_BASE_URL:-}
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-text-embedding-3-small}
+      EMBEDDING_DIMENSIONS: ${EMBEDDING_DIMENSIONS:-1536}
+      ENFORCE_WIDGET_ORIGIN: ${ENFORCE_WIDGET_ORIGIN:-true}
+      WEB_CONCURRENCY: ${WEB_CONCURRENCY:-2}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    # Not published: only nginx (the admin service) talks to the backend.
+    expose:
+      - "8000"
+    logging: &logging
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
 
   admin:
     build:
@@ -40,9 +80,39 @@ services:
       dockerfile: Dockerfile
     restart: unless-stopped
     ports:
-      - "3001:80"
+      # Bound to localhost by default so plain HTTP is never exposed to the internet.
+      # For a LAN/dev box without TLS set BIND_ADDR=0.0.0.0 in .env.
+      - "${BIND_ADDR:-127.0.0.1}:${HTTP_PORT:-3001}:80"
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1/nginx-health"]
+      interval: 15s
+      timeout: 3s
+      retries: 5
+    logging: *logging
+
+  # Automatic HTTPS (Let's Encrypt). Needs DOMAIN pointing at this server and ports 80/443 open.
+  caddy:
+    image: caddy:2-alpine
+    profiles: ["tls"]
+    restart: unless-stopped
+    environment:
+      DOMAIN: ${DOMAIN:-localhost}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      admin:
+        condition: service_healthy
+    logging: *logging
 
 volumes:
   postgres_data:
+  caddy_data:
+  caddy_config:

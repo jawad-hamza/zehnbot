@@ -1,39 +1,43 @@
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, status
-from sqlalchemy.orm import Session
 import uuid
+from typing import Optional
 
-from app.dependencies import get_db, get_current_admin
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, UploadFile, File, status
+from sqlalchemy.orm import Session
+
+from app.dependencies import get_db, get_owned_client
 from app.models.client import Client
+from app.models.job import IngestJob
 from app.models.knowledge import KnowledgeChunk
 from app.schemas.knowledge import (
-    KnowledgeUpload,
-    KnowledgeUrlIngest,
-    KnowledgeCrawlRequest,
-    KnowledgeCrawlResponse,
-    KnowledgeListResponse,
-    KnowledgeUploadResponse,
+    IngestJobResponse,
     KnowledgeChunkResponse,
+    KnowledgeCrawlRequest,
+    KnowledgeListResponse,
+    KnowledgeUpload,
+    KnowledgeUploadResponse,
+    KnowledgeUrlIngest,
 )
-from app.services.knowledge_service import save_knowledge, append_knowledge, fetch_url_text, extract_file_text, crawl_site
+from app.services import knowledge_service
+from app.services.knowledge_service import KnowledgeLimitError
+from app.services.net_guard import UnsafeURLError, assert_public_url
 
 router = APIRouter()
 
 MAX_FILE_BYTES = 10 * 1024 * 1024  # 10 MB
 
 
-def _get_client_or_404(client_uuid: uuid.UUID, db: Session) -> Client:
-    client = db.query(Client).filter(Client.id == client_uuid).first()
-    if not client:
-        raise HTTPException(status_code=404, detail="Client not found")
-    return client
+def _store(action, *args) -> KnowledgeUploadResponse:
+    try:
+        return KnowledgeUploadResponse(chunks_created=action(*args))
+    except KnowledgeLimitError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 @router.get("/clients/{client_uuid}/knowledge", response_model=KnowledgeListResponse)
-def get_knowledge(client_uuid: uuid.UUID, db: Session = Depends(get_db), _=Depends(get_current_admin)):
-    _get_client_or_404(client_uuid, db)
+def get_knowledge(client: Client = Depends(get_owned_client), db: Session = Depends(get_db)):
     chunks = (
         db.query(KnowledgeChunk)
-        .filter(KnowledgeChunk.client_id == client_uuid)
+        .filter(KnowledgeChunk.client_id == client.id)
         .order_by(KnowledgeChunk.chunk_index)
         .all()
     )
@@ -41,51 +45,78 @@ def get_knowledge(client_uuid: uuid.UUID, db: Session = Depends(get_db), _=Depen
 
 
 @router.post("/clients/{client_uuid}/knowledge", response_model=KnowledgeUploadResponse, status_code=status.HTTP_201_CREATED)
-def upload_knowledge(client_uuid: uuid.UUID, body: KnowledgeUpload, db: Session = Depends(get_db), _=Depends(get_current_admin)):
-    client = _get_client_or_404(client_uuid, db)
-    count = save_knowledge(body.raw_text, client.id, body.source_label, db)
-    return KnowledgeUploadResponse(chunks_created=count)
+def upload_knowledge(body: KnowledgeUpload, client: Client = Depends(get_owned_client), db: Session = Depends(get_db)):
+    """Pasted text. Replaces the source with the same label only; other sources are kept."""
+    return _store(knowledge_service.replace_source, body.raw_text, client.id, body.source_label.strip(), db)
 
 
 @router.post("/clients/{client_uuid}/knowledge/url", response_model=KnowledgeUploadResponse, status_code=status.HTTP_201_CREATED)
-def ingest_url(client_uuid: uuid.UUID, body: KnowledgeUrlIngest, db: Session = Depends(get_db), _=Depends(get_current_admin)):
-    client = _get_client_or_404(client_uuid, db)
-    text = fetch_url_text(body.url)
-    count = append_knowledge(text, client.id, body.url, db)
-    return KnowledgeUploadResponse(chunks_created=count)
+def ingest_url(body: KnowledgeUrlIngest, client: Client = Depends(get_owned_client), db: Session = Depends(get_db)):
+    client_db_id = client.id
+    db.commit()   # give the connection back while we wait on the remote site
+    text = knowledge_service.fetch_url_text(body.url)
+    return _store(knowledge_service.replace_source, text, client_db_id, body.url.strip(), db)
 
 
-@router.post("/clients/{client_uuid}/knowledge/crawl", response_model=KnowledgeCrawlResponse, status_code=status.HTTP_201_CREATED)
-def crawl_knowledge(client_uuid: uuid.UUID, body: KnowledgeCrawlRequest, db: Session = Depends(get_db), _=Depends(get_current_admin)):
-    client = _get_client_or_404(client_uuid, db)
-    pages = crawl_site(body.url, max_pages=min(max(body.max_pages, 1), 50))
-    total_chunks = 0
-    for page_url, text in pages:
-        total_chunks += append_knowledge(text, client.id, page_url, db)
-    return KnowledgeCrawlResponse(pages_crawled=len(pages), chunks_created=total_chunks)
+@router.post("/clients/{client_uuid}/knowledge/crawl", response_model=IngestJobResponse, status_code=status.HTTP_202_ACCEPTED)
+def crawl_knowledge(
+    body: KnowledgeCrawlRequest,
+    background: BackgroundTasks,
+    client: Client = Depends(get_owned_client),
+    db: Session = Depends(get_db),
+):
+    """Crawls take minutes, so they run in the background. Poll the returned job."""
+    url = body.url.strip()
+    try:
+        assert_public_url(url)
+    except UnsafeURLError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    running = (
+        db.query(IngestJob.id)
+        .filter(IngestJob.client_id == client.id, IngestJob.status.in_(("pending", "running")))
+        .first()
+    )
+    if running:
+        raise HTTPException(status_code=409, detail="A crawl is already running for this bot.")
+
+    job = IngestJob(client_id=client.id, kind="crawl", url=url, max_pages=body.max_pages)
+    db.add(job)
+    db.commit()
+    db.refresh(job)
+    background.add_task(knowledge_service.run_crawl_job, job.id)
+    return job
+
+
+@router.get("/clients/{client_uuid}/knowledge/jobs/{job_id}", response_model=IngestJobResponse)
+def get_job(job_id: uuid.UUID, client: Client = Depends(get_owned_client), db: Session = Depends(get_db)):
+    job = db.query(IngestJob).filter(IngestJob.id == job_id, IngestJob.client_id == client.id).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    return job
 
 
 @router.post("/clients/{client_uuid}/knowledge/file", response_model=KnowledgeUploadResponse, status_code=status.HTTP_201_CREATED)
 async def ingest_file(
-    client_uuid: uuid.UUID,
     file: UploadFile = File(...),
+    client: Client = Depends(get_owned_client),
     db: Session = Depends(get_db),
-    _=Depends(get_current_admin),
 ):
-    client = _get_client_or_404(client_uuid, db)
-    data = await file.read()
+    data = await file.read(MAX_FILE_BYTES + 1)
     if len(data) > MAX_FILE_BYTES:
         raise HTTPException(status_code=413, detail="File too large (max 10 MB).")
     if not data:
         raise HTTPException(status_code=400, detail="Empty file.")
-    text = extract_file_text(file.filename or "upload", data)
-    label = f"file:{file.filename}" if file.filename else "file"
-    count = append_knowledge(text, client.id, label, db)
-    return KnowledgeUploadResponse(chunks_created=count)
+    filename = (file.filename or "upload")[:200]
+    text = knowledge_service.extract_file_text(filename, data)
+    return _store(knowledge_service.replace_source, text, client.id, f"file:{filename}", db)
 
 
 @router.delete("/clients/{client_uuid}/knowledge", status_code=status.HTTP_204_NO_CONTENT)
-def delete_knowledge(client_uuid: uuid.UUID, db: Session = Depends(get_db), _=Depends(get_current_admin)):
-    _get_client_or_404(client_uuid, db)
-    db.query(KnowledgeChunk).filter(KnowledgeChunk.client_id == client_uuid).delete()
-    db.commit()
+def delete_knowledge(
+    source_label: Optional[str] = None,
+    client: Client = Depends(get_owned_client),
+    db: Session = Depends(get_db),
+):
+    """Deletes one source when `source_label` is given, otherwise everything."""
+    knowledge_service.delete_knowledge(client.id, db, source_label)

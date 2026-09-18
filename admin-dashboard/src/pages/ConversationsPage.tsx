@@ -3,38 +3,70 @@ import { useParams, Link } from "react-router-dom";
 import { api } from "../api/client";
 import type { Conversation, Message } from "../types";
 
+const PAGE_SIZE = 20;
+
 export default function ConversationsPage() {
   const { id } = useParams<{ id: string }>();
   const [convs, setConvs] = useState<Conversation[]>([]);
   const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
+  const [searchBox, setSearchBox] = useState("");
+  const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(true);
 
+  // Search as the owner types, but only once they pause
   useEffect(() => {
-    api.get(`/admin/clients/${id}/conversations`).then((r) => {
+    const timer = setTimeout(() => { setQuery(searchBox.trim()); setPage(1); }, 300);
+    return () => clearTimeout(timer);
+  }, [searchBox]);
+
+  useEffect(() => {
+    let current = true;
+    setLoading(true);
+    api.get(`/admin/clients/${id}/conversations`, { params: { page, page_size: PAGE_SIZE, q: query || undefined } }).then((r) => {
+      if (!current) return;   // a slower, older search must not overwrite a newer one
       setConvs(r.data.items);
       setTotal(r.data.total);
       setLoading(false);
     });
-  }, [id]);
+    return () => { current = false; };
+  }, [id, page, query]);
 
   function openConversation(convId: string) {
     setSelected(convId);
     api.get(`/admin/conversations/${convId}/messages`).then((r) => setMessages(r.data));
   }
 
+  const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const pagerBtn = (disabled: boolean): React.CSSProperties => ({
+    background: "#fff", border: "1px solid #cbd5e1", borderRadius: 6, padding: "4px 12px", fontSize: 12,
+    cursor: disabled ? "default" : "pointer", opacity: disabled ? 0.45 : 1, fontFamily: "inherit",
+  });
+
   return (
     <div>
-      <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 24 }}>
-        <Link to="/clients" style={{ color: "#64748b", textDecoration: "none", fontSize: 14 }}>← Clients</Link>
+      <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 20 }}>
+        <Link to="/clients" style={{ color: "#64748b", textDecoration: "none", fontSize: 14 }}>← Bots</Link>
         <h1 style={{ fontSize: 20, fontWeight: 700 }}>Conversations ({total})</h1>
       </div>
 
-      {loading && <p style={{ color: "#64748b" }}>Loading…</p>}
+      <input
+        type="search"
+        value={searchBox}
+        onChange={(e) => setSearchBox(e.target.value)}
+        placeholder="Search what visitors and the bot said…"
+        aria-label="Search conversations"
+        maxLength={200}
+        style={{ width: 320, padding: "9px 12px", border: "1px solid #cbd5e1", borderRadius: 8, fontSize: 13, outline: "none", marginBottom: 14, fontFamily: "inherit" }}
+      />
 
       <div style={{ display: "flex", gap: 24 }}>
-        <div style={{ width: 320, flexShrink: 0 }}>
+        <div style={{ width: 320, flexShrink: 0, opacity: loading ? 0.5 : 1, transition: "opacity 0.15s" }}>
+          {!loading && convs.length === 0 && (
+            <p style={{ color: "#64748b", fontSize: 13 }}>{query ? `No conversation mentions "${query}".` : "No conversations yet."}</p>
+          )}
           {convs.map((c) => (
             <div
               key={c.id}
@@ -54,6 +86,13 @@ export default function ConversationsPage() {
               </div>
             </div>
           ))}
+          {pages > 1 && (
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 6, fontSize: 12, color: "#64748b" }}>
+              <button type="button" disabled={page <= 1} onClick={() => setPage(page - 1)} style={pagerBtn(page <= 1)}>Newer</button>
+              <span>Page {page} of {pages}</span>
+              <button type="button" disabled={page >= pages} onClick={() => setPage(page + 1)} style={pagerBtn(page >= pages)}>Older</button>
+            </div>
+          )}
         </div>
 
         {selected && (
@@ -68,10 +107,19 @@ export default function ConversationsPage() {
                   maxWidth: "80%",
                   fontSize: 13,
                   lineHeight: 1.5,
+                  whiteSpace: "pre-wrap",
+                  overflowWrap: "anywhere",
                 }}>
                   {m.content}
                 </div>
-                <span style={{ fontSize: 11, color: "#94a3b8", marginTop: 2 }}>{m.role} · {new Date(m.created_at).toLocaleTimeString()}</span>
+                <span style={{ fontSize: 11, color: "#94a3b8", marginTop: 2 }}>
+                  {m.role} · {new Date(m.created_at).toLocaleTimeString()}
+                  {m.unanswered && (
+                    <span style={{ marginLeft: 6, background: "#fef3c7", color: "#92400e", padding: "1px 7px", borderRadius: 999, fontWeight: 600 }}>
+                      ⚠ couldn't answer
+                    </span>
+                  )}
+                </span>
               </div>
             ))}
           </div>
