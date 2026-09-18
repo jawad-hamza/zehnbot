@@ -1,0 +1,48 @@
+version: "3.9"
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: chatbot
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: chatbotdb
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U chatbot"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://chatbot:${DB_PASSWORD}@db:5432/chatbotdb
+      SECRET_KEY: ${SECRET_KEY}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS}
+      ADMIN_SEED_EMAIL: ${ADMIN_SEED_EMAIL}
+      ADMIN_SEED_PASSWORD: ${ADMIN_SEED_PASSWORD}
+    ports:
+      - "8001:8000"
+
+  admin:
+    build:
+      context: ./admin-dashboard
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "3001:80"
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data:

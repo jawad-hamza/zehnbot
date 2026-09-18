@@ -1,0 +1,30 @@
+# Secrets
+.env
+.env.*
+!.env.example
+
+# Python
+venv/
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Node
+node_modules/
+admin-dashboard/dist/
+widget/dist/
+
+# Built widget bundle (produced by the Docker build)
+backend/static/widget.js
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Local Claude Code settings
+.claude/settings.local.json
