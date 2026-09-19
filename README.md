@@ -163,15 +163,14 @@ How it is built, because these are the parts that get attacked:
   password that was set on it. Both close the "register the victim's email first, then wait" attack.
 - "Send a new link" answers the same way whether or not the address has an account.
 
-### The landing page lives on zehnox.com
+### Two landing pages
 
-ZehnBot's public landing page is a page of the ZEHNOX website (`https://zehnox.com/zehnbot`, in the separate
-`zehnox-site` repository), not of this app. This app is the product itself and is meant to run on its own host
-(`https://bot.zehnox.com`); every "Start free" and "Log in" on the landing page points here.
+`https://bot.zehnox.com/` serves ZehnBot's own landing page ("Turn questions into leads"), to everyone, and never
+redirects; signed-in users get "Open dashboard" on it. The ZEHNOX website also has a product page for ZehnBot
+(`https://zehnox.com/zehnbot`, in the separate `zehnox-site` repository) whose "Start free" and "Log in" point here.
 
-- `MARKETING_URL=https://zehnox.com/zehnbot` tells the app so: its own `/` then goes to log in (or to the
-  dashboard when signed in), and the logo on the sign-in pages links back to the landing page. Left empty, the
-  app serves its built-in landing page at `/`, which is what a fresh local install does.
+- `MARKETING_URL=https://zehnox.com/zehnbot` is only where the logo on the sign-in pages links. It does not
+  change what `/` shows.
 - **Prices are edited here, shown there.** Super admin > Settings > *Plans and pricing* sets the price, the one
   line under it, the currency and the recommended plan. `GET /api/public/plans` (no login, any origin, cached
   five minutes) combines them with the real limits from `PLANS` in `backend/app/config.py`; the landing page

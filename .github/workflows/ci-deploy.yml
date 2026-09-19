@@ -59,9 +59,9 @@ jobs:
       - name: Widget tests
         working-directory: widget
         run: npm ci && npm test
-      - name: Dashboard type check and build
+      - name: Dashboard type check, tests and build
         working-directory: admin-dashboard
-        run: npm ci && npx tsc --noEmit && npm run build
+        run: npm ci && npx tsc --noEmit && npm test && npm run build
 
       - name: Deploy scripts and nginx configuration
         run: |

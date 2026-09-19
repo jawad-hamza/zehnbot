@@ -48,8 +48,8 @@ class Settings(BaseSettings):
     # client_id of a bot to run live on the public landing page ("talk to it before you sign up").
     # Its Website setting needs no entry for the platform's own domain: our own pages are always allowed.
     LANDING_DEMO_BOT: str = ""
-    # The marketing page when it lives on another website (e.g. https://zehnox.com/zehnbot). Set, the app's own
-    # "/" stops showing a landing page and goes to log in; the logo on the sign-in pages links back there.
+    # The company's product page (e.g. https://zehnox.com/zehnbot). Only the logo on the sign-in pages links
+    # there; the app's own "/" always shows ZehnBot's landing page and never redirects.
     MARKETING_URL: str = ""
     DEFAULT_SIGNUP_PLAN: str = "free"
 
