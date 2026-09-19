@@ -1,6 +1,6 @@
 import { setApiBase, fetchConfig, sendMessage, streamMessage, canStream, submitLead } from "./api.js";
 import { buildWidget } from "./ui.js";
-import { primeAudio, playChirp } from "./sound.js";
+import { primeAudio, playChirp, playOpen, playClose, playSend, playSuccess, playAlert } from "./sound.js";
 
 const MAX_MESSAGE_CHARS = 2000; // keep in sync with the server's MAX_MESSAGE_CHARS
 const MAX_STORED_MESSAGES = 60;
@@ -165,9 +165,63 @@ function attachHandlers(ui, clientId, config) {
     save();
   }
   if (state.open) ui.setOpen(true, { focus: false });
+
+  // Replies that arrive while the visitor is away (chat closed, or another tab): a louder alert, a count on
+  // the launcher, and the tab title blinking until they come back
+  let unread = 0;
+  const originalTitle = { value: null, timer: null };
+  const away = () => document.hidden || !ui.isOpen();
+  function stopTitle() {
+    if (originalTitle.timer) clearInterval(originalTitle.timer);
+    if (originalTitle.value !== null) document.title = originalTitle.value;
+    originalTitle.timer = null;
+    originalTitle.value = null;
+  }
+  function blinkTitle() {
+    if (!document.hidden) return;
+    if (originalTitle.timer) {
+      document.title = `(${unread}) New message`;   // already blinking: show the new count at once
+      return;
+    }
+    originalTitle.value = document.title;
+    document.title = `(${unread}) New message`;
+    let on = true;
+    originalTitle.timer = setInterval(() => {
+      on = !on;
+      document.title = on ? `(${unread}) New message` : originalTitle.value;
+    }, 1200);
+  }
+  function markRead() {
+    unread = 0;
+    ui.setUnread(0);
+  }
+  function announceReply() {
+    if (away()) {
+      unread += 1;
+      ui.setUnread(unread);
+      blinkTitle();
+      if (ui.soundOn()) playAlert();
+    } else if (ui.soundOn()) {
+      playChirp();
+    }
+  }
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) return;
+    stopTitle();
+    if (ui.isOpen()) markRead();
+  });
+
   ui.onOpenChange((open) => {
     state.open = open;
     save();
+    if (ui.soundOn()) {
+      primeAudio();   // opening is a click: from here on, replies are allowed to make a sound
+      (open ? playOpen : playClose)();
+    }
+    if (open) {
+      markRead();
+      stopTitle();
+    }
     events.emit(open ? "open" : "close");
   });
 
@@ -208,7 +262,10 @@ function attachHandlers(ui, clientId, config) {
     events.emit("message", { role: "user", text });
     ui.clearInput();
     ui.setBusy(true);
-    if (ui.soundOn()) primeAudio(); // inside the click, so the browser lets the reply make a sound
+    if (ui.soundOn()) {
+      primeAudio(); // inside the click, so the browser lets the reply make a sound
+      playSend();
+    }
     ui.setTyping(true);
 
     let bubble = null;
@@ -220,7 +277,7 @@ function attachHandlers(ui, clientId, config) {
           reply += piece;
           if (!bubble) {
             ui.setTyping(false); // the first words replace the typing dots
-            if (ui.soundOn()) playChirp();
+            announceReply();
             bubble = ui.appendMessage("assistant", reply);
             bubble.setStreaming(true);
           } else {
@@ -230,7 +287,7 @@ function attachHandlers(ui, clientId, config) {
       } else {
         summary = await sendMessage(clientId, state.sessionId, text);
         reply = summary.reply;
-        if (ui.soundOn()) playChirp();
+        announceReply();
         ui.appendMessage("assistant", reply);
       }
       remember("assistant", reply.trim());
@@ -285,6 +342,7 @@ function attachHandlers(ui, clientId, config) {
       ui.leadPhone.value = "";
       ui.appendMessage("assistant", LEAD_DONE_MESSAGE);
       remember("assistant", LEAD_DONE_MESSAGE);
+      if (ui.soundOn()) playSuccess();
     } catch (err) {
       ui.setLeadError(
         err && err.status === 422

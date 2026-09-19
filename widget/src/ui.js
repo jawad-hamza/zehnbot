@@ -235,6 +235,16 @@ export function buildWidget(config) {
       fitInput();
     },
     onOpenChange: (fn) => openListeners.push(fn),
+    /** Replies the visitor has not seen yet: a count on the launcher, also said by screen readers. */
+    setUnread: (count) => {
+      if (count > 0) {
+        launcher.setAttribute("data-unread", count > 9 ? "9+" : String(count));
+        launcher.setAttribute("aria-label", `Open chat, ${count} new ${count === 1 ? "message" : "messages"}`);
+      } else {
+        launcher.removeAttribute("data-unread");
+        launcher.setAttribute("aria-label", panel.classList.contains("cb-open") ? "Close chat" : "Open chat");
+      }
+    },
     showLeadForm: (show) => {
       leadForm.classList.toggle("cb-open", show);
       if (show) scrollToEnd();

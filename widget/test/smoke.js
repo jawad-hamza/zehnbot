@@ -12,6 +12,8 @@ const check = (name, ok, detail) => {
   console.log(`  [${ok ? "PASS" : "FAIL"}] ${name}${!ok && detail !== undefined ? "   -> " + JSON.stringify(detail) : ""}`);
 };
 const tick = (ms = 30) => new Promise((r) => setTimeout(r, ms));
+// Each sound, as the starting pitches of its notes (see widget/src/sound.js)
+const SEND = [600], CHIRP = [1350, 1650], ALERT = [988, 1319, 988, 1319], OPEN = [520], CLOSE = [820], SUCCESS = [1047, 1319, 1568];
 
 const CONFIG = { bot_name: "Acme <b>Bot</b>", welcome_message: "Hi! How can I help?", theme_color: "#0f766e", widget_position: "bottom-right", font_family: null, custom_css: "#cb-launcher { border-radius: 12px; }" };
 
@@ -65,13 +67,13 @@ async function load(stored, behaviour = {}) {
   const log = [];
   Object.assign(w, { fetch: makeServer(log, behaviour), Response, ReadableStream, TextDecoder, TextEncoder });
 
-  // jsdom has no Web Audio. This stand-in only counts the notes the widget asks for.
+  // jsdom has no Web Audio. This stand-in records the starting pitch of every note the widget plays.
   const notes = [];
-  const param = () => ({ setValueAtTime() {}, exponentialRampToValueAtTime() {} });
+  const param = () => ({ setValueAtTime(v) { if (this.v === undefined) this.v = v; }, exponentialRampToValueAtTime() {} });
   w.AudioContext = class {
     constructor() { this.state = "running"; this.currentTime = 0; this.destination = {}; }
     resume() {}
-    createOscillator() { return { frequency: param(), connect: (x) => x, start: () => notes.push("note"), stop() {} }; }
+    createOscillator() { const osc = { frequency: param(), connect: (x) => x, start: () => notes.push(Math.round(osc.frequency.v)), stop() {} }; return osc; }
     createGain() { return { gain: param(), connect: (x) => x }; }
   };
   if (behaviour.muted) w.localStorage.setItem("cb_muted", "1");
@@ -147,6 +149,7 @@ async function send(page, text) {
   const leadCall = page.log.find((r) => r.path === "/api/leads/capture");
   check("lead is sent with the conversation id from the stream", leadCall && leadCall.body.conversation_id === "11111111-2222-3333-4444-555555555555" && leadCall.body.email === "dana@example.com", leadCall);
   check("form closes and the visitor is thanked", !page.$("cb-lead-form").classList.contains("cb-open") && bubbles().at(-1).textContent.includes("be in touch"));
+  check("...with a small 'done' sound", JSON.stringify(page.notes.slice(-3)) === JSON.stringify(SUCCESS), page.notes);
 
   console.log("persistence across page loads");
   const stored = page.w.sessionStorage.getItem("cb_chat_acme-bot");
@@ -188,13 +191,43 @@ async function send(page, text) {
   check("both lines reach the server as one message", sentBody.message === "line one\nline two", sentBody.message);
   check("the visitor's bubble keeps the line break, and the box is emptied", [...page.root.querySelectorAll(".cb-msg--user")].at(-1).textContent === "line one\nline two" && box.value === "");
 
-  console.log("message sound");
-  check("a reply plays the two-note chirp once", page.notes.length === 2, page.notes.length);
+  console.log("sounds, and replies that arrive while the visitor is away");
+  // this page's chat was never opened, so the reply above arrived "away": swish on send, then the alert
+  check("sending swishes; a reply to a closed chat rings the louder alert", JSON.stringify(page.notes) === JSON.stringify([...SEND, ...ALERT]), page.notes);
+  check("...shows an unread count on the launcher, also for screen readers",
+    page.$("cb-launcher").getAttribute("data-unread") === "1" && page.$("cb-launcher").getAttribute("aria-label") === "Open chat, 1 new message");
+  page.notes.length = 0;
+  page.$("cb-launcher").click();
+  check("opening pops, and clears the count", JSON.stringify(page.notes) === JSON.stringify(OPEN) && !page.$("cb-launcher").hasAttribute("data-unread") && page.$("cb-launcher").getAttribute("aria-label") === "Close chat", page.notes);
+  page.notes.length = 0;
+  await send(page, "while watching");
+  check("a reply while the visitor is watching is the soft chirp, and no count", JSON.stringify(page.notes) === JSON.stringify([...SEND, ...CHIRP]) && !page.$("cb-launcher").hasAttribute("data-unread"), page.notes);
+  page.notes.length = 0;
+  page.$("cb-close").click();
+  check("closing pops downwards", JSON.stringify(page.notes) === JSON.stringify(CLOSE), page.notes);
+
+  // in another tab: the title blinks until the visitor comes back
+  page.$("cb-launcher").click();
+  Object.defineProperty(page.w.document, "hidden", { configurable: true, get: () => true });
+  const title = page.w.document.title = "Acme pricing";
+  const titles = [];
+  const watchTitle = setInterval(() => titles.push(page.w.document.title), 100);
+  await send(page, "in another tab");
+  await tick(2600);
+  clearInterval(watchTitle);
+  check("a reply while the visitor is in another tab blinks the tab title",
+    titles.includes("(1) New message") && titles.slice(titles.indexOf("(1) New message")).includes(title), [...new Set(titles)]);
+  Object.defineProperty(page.w.document, "hidden", { configurable: true, get: () => false });
+  page.w.document.dispatchEvent(new page.w.Event("visibilitychange"));
+  check("coming back restores the title and clears the count", page.w.document.title === title && !page.$("cb-launcher").hasAttribute("data-unread"), page.w.document.title);
+
   const mute = page.$("cb-mute");
   check("the visitor gets a labelled mute button", mute && mute.getAttribute("aria-label") === "Mute message sound" && mute.getAttribute("aria-pressed") === "false");
   mute.click();
+  page.notes.length = 0;
   await send(page, "again");
-  check("muted: no sound, and the choice is remembered", page.notes.length === 2 && mute.getAttribute("aria-pressed") === "true" && page.w.localStorage.getItem("cb_muted") === "1", page.notes.length);
+  page.$("cb-close").click();
+  check("muted: no sound at all, and the choice is remembered", page.notes.length === 0 && mute.getAttribute("aria-pressed") === "true" && page.w.localStorage.getItem("cb_muted") === "1", page.notes);
   page = await load(null, { muted: true });
   await send(page, "hello");
   check("a visitor who muted it earlier stays muted on the next visit", page.notes.length === 0 && page.$("cb-mute").getAttribute("aria-pressed") === "true");

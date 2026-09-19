@@ -107,6 +107,26 @@ export function buildStyles(config) {
     #cb-launcher.cb-has-open[aria-expanded="true"] .cb-img--normal,
     #cb-launcher.cb-has-open[aria-expanded="true"] .cb-img--hover { display: none; }
     #cb-launcher.cb-has-open[aria-expanded="true"] .cb-img--open { display: block; }
+    /* Unread replies (chat closed, or visitor in another tab): a count that pops in and pulses */
+    #cb-launcher[data-unread]::after {
+      content: attr(data-unread);
+      position: absolute;
+      top: -4px;
+      ${left ? "left" : "right"}: -4px;
+      min-width: 20px;
+      height: 20px;
+      padding: 0 6px;
+      border-radius: 999px;
+      background: #e11d48;
+      color: #fff;
+      font: 700 11px/20px ${DEFAULT_FONT};
+      text-align: center;
+      box-shadow: 0 0 0 2px #fff;
+      animation: cb-badge-in 0.3s cubic-bezier(0.2,0.9,0.3,1.4), cb-badge-pulse 1.8s ease-in-out 0.3s infinite;
+      pointer-events: none;
+    }
+    @keyframes cb-badge-in { from { transform: scale(0); } to { transform: scale(1); } }
+    @keyframes cb-badge-pulse { 0%, 100% { box-shadow: 0 0 0 2px #fff, 0 0 0 2px rgba(225,29,72,0.5); } 50% { box-shadow: 0 0 0 2px #fff, 0 0 0 8px rgba(225,29,72,0); } }
     @keyframes cb-launcher-pop {
       from { transform: scale(0); opacity: 0; }
       to   { transform: scale(1); opacity: 1; }
@@ -382,7 +402,7 @@ export function buildStyles(config) {
     }
 
     @media (prefers-reduced-motion: reduce) {
-      #cb-launcher, #cb-panel.cb-open, .cb-msg, #cb-typing span { animation: none; transition: none; }
+      #cb-launcher, #cb-panel.cb-open, .cb-msg, #cb-typing span, #cb-launcher[data-unread]::after { animation: none; transition: none; }
     }
   `;
 }
