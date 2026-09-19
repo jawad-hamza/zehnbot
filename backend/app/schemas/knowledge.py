@@ -2,7 +2,13 @@ import uuid
 from datetime import datetime
 from typing import List, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+
+
+def with_scheme(value: str) -> str:
+    """People type "example.com/pricing", not "https://example.com/pricing"."""
+    value = value.strip()
+    return value if "://" in value else "https://" + value
 
 
 class KnowledgeUpload(BaseModel):
@@ -11,12 +17,16 @@ class KnowledgeUpload(BaseModel):
 
 
 class KnowledgeUrlIngest(BaseModel):
-    url: str = Field(min_length=8, max_length=2048)
+    url: str = Field(min_length=4, max_length=2048)
+
+    _url = field_validator("url")(with_scheme)
 
 
 class KnowledgeCrawlRequest(BaseModel):
-    url: str = Field(min_length=8, max_length=2048)
+    url: str = Field(min_length=4, max_length=2048)
     max_pages: int = Field(default=25, ge=1, le=50)
+
+    _url = field_validator("url")(with_scheme)
 
 
 class IngestJobResponse(BaseModel):

@@ -3,10 +3,48 @@
 
 const DEFAULT_FONT = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
 
+const INK = "#13101f";
+const WHITE = "#ffffff";
+
+function luminance(hex) {
+  const [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255).map((v) => (v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4));
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+
+function contrast(a, b) {
+  const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x);
+  return (hi + 0.05) / (lo + 0.05);
+}
+
+/** Text on the brand colour: white on a deep blue, dark ink on a lime or a yellow. Whichever reads better. */
+export function onColor(theme) {
+  return contrast(theme, WHITE) >= contrast(theme, INK) ? WHITE : INK;
+}
+
+/** The brand colour as TEXT on the white chat panel (links). A pale brand colour is deepened until it can be read. */
+export function readableOnWhite(theme) {
+  let [r, g, b] = [1, 3, 5].map((i) => parseInt(theme.slice(i, i + 2), 16));
+  let hex = theme;
+  for (let step = 0; step < 20 && contrast(hex, WHITE) < 4.5; step++) {
+    [r, g, b] = [r, g, b].map((v) => Math.round(v * 0.88));
+    hex = "#" + [r, g, b].map((v) => v.toString(16).padStart(2, "0")).join("");
+  }
+  return hex;
+}
+
+/** With no font chosen, the widget speaks in the host page's own typeface (fonts loaded by the page work inside a shadow root). */
+function pageFont() {
+  try {
+    return getComputedStyle(document.body).fontFamily || "";
+  } catch (_) {
+    return "";
+  }
+}
+
 export function buildStyles(config) {
-  // Values come from the dashboard, but are still treated as untrusted when put into CSS
-  const theme = /^#[0-9a-fA-F]{6}$/.test(config.theme_color || "") ? config.theme_color : "#2563eb";
-  const font = (config.font_family || "").replace(/[;{}<>\\]/g, "").trim() || DEFAULT_FONT;
+  // Values come from the dashboard (or from the host page), but are still treated as untrusted when put into CSS
+  const theme = /^#[0-9a-fA-F]{6}$/.test(config.theme_color || "") ? config.theme_color : "#1a52d7";
+  const font = (config.font_family || pageFont()).replace(/[;{}<>\\]/g, "").trim() || DEFAULT_FONT;
   const left = config.widget_position === "bottom-left";
   const side = left ? "left: 24px; right: auto;" : "right: 24px; left: auto;";
   const tailCorner = left ? "border-bottom-left-radius: 4px;" : "border-bottom-right-radius: 4px;";
@@ -15,6 +53,8 @@ export function buildStyles(config) {
     :host {
       all: initial;            /* start from browser defaults, not from the host page */
       --cb-theme: ${theme};
+      --cb-on-theme: ${onColor(theme)};
+      --cb-theme-text: ${readableOnWhite(theme)};
       --cb-font: ${font};
     }
     *, *::before, *::after { box-sizing: border-box; }
@@ -27,7 +67,7 @@ export function buildStyles(config) {
       height: 56px;
       border-radius: 50%;
       background: var(--cb-theme);
-      color: #fff;
+      color: var(--cb-on-theme);
       border: none;
       cursor: pointer;
       box-shadow: 0 4px 14px rgba(0,0,0,0.25);
@@ -82,7 +122,7 @@ export function buildStyles(config) {
 
     #cb-header {
       background: var(--cb-theme);
-      color: #fff;
+      color: var(--cb-on-theme);
       padding: 14px 16px;
       display: flex;
       align-items: center;
@@ -94,7 +134,7 @@ export function buildStyles(config) {
     #cb-close {
       background: none;
       border: none;
-      color: #fff;
+      color: var(--cb-on-theme);
       font-size: 20px;
       cursor: pointer;
       line-height: 1;
@@ -105,6 +145,22 @@ export function buildStyles(config) {
       transition: opacity 0.15s;
     }
     #cb-close:hover { opacity: 1; }
+    #cb-header-actions { display: flex; align-items: center; gap: 10px; }
+    #cb-mute {
+      background: none;
+      border: none;
+      color: var(--cb-on-theme);
+      cursor: pointer;
+      padding: 4px;
+      margin: -4px 0;
+      border-radius: 6px;
+      opacity: 0.85;
+      display: flex;
+      transition: opacity 0.15s;
+    }
+    #cb-mute:hover { opacity: 1; }
+    #cb-mute[aria-pressed="true"] { opacity: 0.6; }
+    #cb-mute:focus-visible { outline: 3px solid rgba(255,255,255,0.9); outline-offset: 2px; }
 
     #cb-messages {
       flex: 1;
@@ -131,7 +187,7 @@ export function buildStyles(config) {
     }
     .cb-msg--user {
       background: var(--cb-theme);
-      color: #fff;
+      color: var(--cb-on-theme);
       align-self: flex-end;
       border-bottom-right-radius: 4px;
       white-space: pre-wrap;
@@ -149,7 +205,7 @@ export function buildStyles(config) {
     .cb-msg p + p, .cb-msg p + ul, .cb-msg p + ol, .cb-msg ul + p, .cb-msg ol + p { margin-top: 8px; }
     .cb-msg ul, .cb-msg ol { margin: 0; padding-left: 20px; }
     .cb-msg li + li { margin-top: 3px; }
-    .cb-msg a { color: var(--cb-theme); text-decoration: underline; }
+    .cb-msg a { color: var(--cb-theme-text); text-decoration: underline; }
     .cb-msg code {
       font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
       font-size: 0.92em;
@@ -240,7 +296,7 @@ export function buildStyles(config) {
     }
     #cb-lead-submit {
       background: var(--cb-theme);
-      color: #fff;
+      color: var(--cb-on-theme);
       border: none;
       border-radius: 8px;
       padding: 8px;
@@ -258,10 +314,23 @@ export function buildStyles(config) {
       background: #fff;
       flex-shrink: 0;
     }
-    #cb-input { flex: 1; min-width: 0; padding: 9px 12px; font-size: 14px; }
+    #cb-input-row { align-items: flex-end; }   /* Send stays at the bottom while the box grows */
+    #cb-input {
+      flex: 1;
+      min-width: 0;
+      padding: 9px 12px;
+      font-size: 14px;
+      line-height: 1.4;
+      height: 38px;            /* one line; ui.js grows it with the text, up to a few lines */
+      max-height: 112px;
+      resize: none;
+      overflow-y: hidden;
+      display: block;
+    }
+    #cb-send { height: 38px; }
     #cb-send {
       background: var(--cb-theme);
-      color: #fff;
+      color: var(--cb-on-theme);
       border: none;
       border-radius: 8px;
       padding: 0 16px;
@@ -288,6 +357,7 @@ export function buildStyles(config) {
       .cb-msg { max-width: 88%; }
       /* below 16px iOS Safari zooms the page when an input is focused */
       #cb-input, #cb-lead-form input { font-size: 16px; }
+      #cb-input, #cb-send { height: 42px; }
     }
 
     @media (prefers-reduced-motion: reduce) {

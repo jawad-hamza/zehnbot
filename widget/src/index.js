@@ -1,5 +1,6 @@
 import { setApiBase, fetchConfig, sendMessage, streamMessage, canStream, submitLead } from "./api.js";
 import { buildWidget } from "./ui.js";
+import { primeAudio, playChirp } from "./sound.js";
 
 const MAX_MESSAGE_CHARS = 2000; // keep in sync with the server's MAX_MESSAGE_CHARS
 const MAX_STORED_MESSAGES = 60;
@@ -43,7 +44,28 @@ const MAX_STORED_MESSAGES = 60;
         document.body.appendChild(ui.host);
         attachHandlers(ui, clientId, config);
       })
-      .catch((err) => console.error("[ChatBot] Init failed:", err));
+      .catch((err) => {
+        // Nothing is rendered: a chat that cannot work should not appear. The reason goes to the
+        // console, where the site owner (not the visitor) will look.
+        if (err && err.status === 403 && location.protocol === "file:") {
+          // the most common first-test mistake, so it gets its own explanation
+          console.warn(
+            "[ChatBot] Not shown: this page was opened as a file (file://). Browsers then hide where the " +
+            "page comes from, and the chat server refuses such requests. Open the page through a web " +
+            "server instead, e.g. http://localhost:5500/ (python -m http.server 5500), or use the " +
+            "Preview button in the dashboard."
+          );
+        } else if (err && err.status === 403) {
+          console.warn(
+            `[ChatBot] Not shown: "${location.hostname}" is not listed in this bot's Website setting. ` +
+            "Add it in the dashboard (Bots → Edit → Website). localhost always works for testing."
+          );
+        } else if (err && err.status === 404) {
+          console.warn(`[ChatBot] Not shown: no active bot has the client_id "${clientId}". Copy the embed code again from the dashboard.`);
+        } else {
+          console.error("[ChatBot] Init failed:", err);
+        }
+      });
 
   // Without `defer`, a script in <head> runs before <body> exists
   if (document.body) boot();
@@ -116,10 +138,15 @@ function attachHandlers(ui, clientId, config) {
     save();
   }
 
-  const failureText = (err) =>
-    err && err.status === 429
-      ? "We're getting a lot of messages right now. Please try again in a minute."
-      : "Sorry, something went wrong. Please try again.";
+  const failureText = (err) => {
+    const status = err && err.status;
+    if (status === 429) return "We're getting a lot of messages right now. Please try again in a minute.";
+    if (status === 403) {
+      console.warn(`[ChatBot] Refused: "${location.hostname}" is not listed in this bot's Website setting (dashboard → Bots → Edit).`);
+      return "This chat isn't available on this website.";
+    }
+    return "Sorry, something went wrong. Please try again.";
+  };
 
   // Send message
   ui.sendBtn.addEventListener("click", async () => {
@@ -128,8 +155,9 @@ function attachHandlers(ui, clientId, config) {
 
     ui.appendMessage("user", text);
     remember("user", text);
-    ui.input.value = "";
+    ui.clearInput();
     ui.setBusy(true);
+    if (ui.soundOn()) primeAudio(); // inside the click, so the browser lets the reply make a sound
     ui.setTyping(true);
 
     let bubble = null;
@@ -141,6 +169,7 @@ function attachHandlers(ui, clientId, config) {
           reply += piece;
           if (!bubble) {
             ui.setTyping(false); // the first words replace the typing dots
+            if (ui.soundOn()) playChirp();
             bubble = ui.appendMessage("assistant", reply);
             bubble.setStreaming(true);
           } else {
@@ -150,6 +179,7 @@ function attachHandlers(ui, clientId, config) {
       } else {
         summary = await sendMessage(clientId, state.sessionId, text);
         reply = summary.reply;
+        if (ui.soundOn()) playChirp();
         ui.appendMessage("assistant", reply);
       }
       remember("assistant", reply.trim());
@@ -186,7 +216,7 @@ function attachHandlers(ui, clientId, config) {
       return;
     }
     if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-      ui.setLeadError("That email doesn't look right — please check it.");
+      ui.setLeadError("That email doesn't look right. Please check it.");
       ui.leadEmail.focus();
       return;
     }
@@ -207,7 +237,7 @@ function attachHandlers(ui, clientId, config) {
       ui.setLeadError(
         err && err.status === 422
           ? "Please check your email and phone number."
-          : "Couldn't send your details just now — please try again."
+          : "Couldn't send your details just now. Please try again."
       );
     } finally {
       ui.leadSubmit.disabled = false;

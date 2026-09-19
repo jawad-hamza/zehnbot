@@ -161,3 +161,40 @@ def test_endpoint_is_rechecked_at_call_time_and_redirects_are_not_followed(monke
     with pytest.raises(AIProviderError) as exc:
         chat_completion([{"role": "user", "content": "hi"}], Endpoint("custom", "m", "http://10.0.0.5:4000/v1", trusted=True), "k")
     assert "Endpoint refused" not in str(exc.value)
+
+
+# ---- bot set-up conveniences ----
+
+def test_client_id_is_generated_from_the_name_when_not_given(api, two_tenants):
+    headers = auth(two_tenants["acme"]["token"])
+    made = [api.post("/api/admin/clients", headers=headers, json={"name": "Zehnox Studio!", "domain": "example.com"}) for _ in range(2)]
+    assert [r.status_code for r in made] == [201, 201], [r.text for r in made]
+    ids = [r.json()["client_id"] for r in made]
+    assert all(i.startswith("zehnox-studio-") and len(i) == len("zehnox-studio-") + 6 for i in ids), ids
+    assert ids[0] != ids[1]                                   # the same name twice is fine
+
+    # a name with nothing usable for a slug (another tenant, so Acme's plan limit stays out of it)
+    other = auth(two_tenants["globex"]["token"])
+    odd = api.post("/api/admin/clients", headers=other, json={"name": "日本語の会社", "domain": "example.jp"})
+    assert odd.status_code == 201 and odd.json()["client_id"].startswith("bot-")
+
+
+def test_owner_can_switch_the_widget_sound_off(api, two_tenants):
+    bot_id, headers = two_tenants["acme"]["bot"]["id"], auth(two_tenants["acme"]["token"])
+    config = "/api/widget/config?client_id=acme-bot"
+    assert api.get(config).json()["notification_sound"] is True                 # on unless switched off
+    assert api.put(f"/api/admin/clients/{bot_id}", headers=headers, json={"notification_sound": False}).status_code == 200
+    assert api.get(config).json()["notification_sound"] is False
+
+
+def test_websites_can_be_typed_without_https():
+    from app.schemas.knowledge import KnowledgeCrawlRequest, KnowledgeUrlIngest
+    assert KnowledgeCrawlRequest(url="example.com").url == "https://example.com"
+    assert KnowledgeUrlIngest(url=" www.example.com/pricing ").url == "https://www.example.com/pricing"
+    assert KnowledgeUrlIngest(url="http://example.com").url == "http://example.com"      # an explicit scheme is kept
+
+
+def test_custom_endpoint_can_be_typed_without_https(api, two_tenants):
+    bot_id, headers = two_tenants["acme"]["bot"]["id"], auth(two_tenants["acme"]["token"])
+    res = api.put(f"/api/admin/clients/{bot_id}", headers=headers, json={"ai_provider": "custom", "ai_base_url": "8.8.8.8/v1", "ai_model": "m"})
+    assert res.status_code == 200 and res.json()["ai_base_url"] == "https://8.8.8.8/v1"

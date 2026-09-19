@@ -19,6 +19,10 @@ class User(Base):
     role = Column(String(32), nullable=False, default=ROLE_TENANT_ADMIN)
     tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=True, index=True)
     is_active = Column(Boolean, nullable=False, default=True)
+    # NULL = the address has not been confirmed yet (only enforced when the platform can send email)
+    email_verified_at = Column(DateTime(timezone=True), nullable=True)
+    # Google's stable account id ("sub"), set once this login has signed in with Google
+    google_sub = Column(String(64), nullable=True, unique=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     tenant = relationship("Tenant", back_populates="users")

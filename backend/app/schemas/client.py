@@ -23,14 +23,18 @@ def _known_provider(value: Optional[str]) -> Optional[str]:
 class ClientCreate(BaseModel):
     name: str = Field(min_length=1, max_length=255)
     domain: str = Field(min_length=1, max_length=255)
-    client_id: str = Field(pattern=r"^[a-z0-9-]{2,64}$")
+    # Normally omitted: the server generates one from the name. Accepted for scripted set-ups.
+    client_id: Optional[str] = Field(default=None, pattern=r"^[a-z0-9-]{2,64}$")
     bot_name: str = Field(default="Assistant", min_length=1, max_length=100)
     system_prompt: str = Field(default="", max_length=8000)
     welcome_message: str = Field(default="Hi! How can I help you?", max_length=1000)
-    theme_color: str = Field(default="#2563eb", pattern=HEX_COLOR)
+    theme_color: str = Field(default="#1a52d7", pattern=HEX_COLOR)
+    # Read the website and take its brand colour and font for the widget (best effort)
+    match_website: bool = False
     widget_position: Position = "bottom-right"
     font_family: Optional[str] = Field(default=None, max_length=200)
     custom_css: Optional[str] = Field(default=None, max_length=20000)
+    notification_sound: bool = True
     ai_provider: str = "deepseek"
     ai_model: Optional[str] = Field(default=None, max_length=100)
     ai_base_url: Optional[str] = Field(default=None, max_length=500)   # provider "custom" only
@@ -52,6 +56,7 @@ class ClientUpdate(BaseModel):
     widget_position: Optional[Position] = None
     font_family: Optional[str] = Field(default=None, max_length=200)
     custom_css: Optional[str] = Field(default=None, max_length=20000)
+    notification_sound: Optional[bool] = None
     ai_provider: Optional[str] = None
     ai_model: Optional[str] = Field(default=None, max_length=100)
     ai_base_url: Optional[str] = Field(default=None, max_length=500)
@@ -75,6 +80,7 @@ class ClientResponse(BaseModel):
     widget_position: str
     font_family: Optional[str] = None
     custom_css: Optional[str] = None
+    notification_sound: bool = True
     ai_provider: str
     ai_model: Optional[str] = None
     ai_base_url: Optional[str] = None
@@ -100,6 +106,7 @@ class ClientResponse(BaseModel):
             widget_position=client.widget_position,
             font_family=client.font_family,
             custom_css=client.custom_css,
+            notification_sound=client.notification_sound,
             ai_provider=client.ai_provider,
             ai_model=client.ai_model,
             ai_base_url=client.ai_base_url,

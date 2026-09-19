@@ -170,7 +170,9 @@
     © 2026 FutureSpace — Chatbot Widget Test Page
   </footer>
 
-  <!-- 🔥 YOUR CHATBOT SCRIPT -->
-<script src="http://localhost:3000/static/widget.js?client_id=admin" defer></script>
-</body>
+  <!-- 🔥 YOUR CHATBOT SCRIPT
+       client_id must be the "Client ID" of a bot you created in the dashboard, and that bot's
+       Domain field must contain "localhost". Serve this page over http (python -m http.server 5500):
+       opened as a file:// the browser sends no usable Origin and the widget is refused. -->
+<script src="http://localhost:3001/static/widget.js?client_id=zen-01" defer></script></body>
 </html>

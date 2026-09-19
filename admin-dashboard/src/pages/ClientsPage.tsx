@@ -43,28 +43,28 @@ export default function ClientsPage() {
     <div>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 24 }}>
         <h1 style={{ fontSize: 22, fontWeight: 700 }}>Bots</h1>
-        <Link to="/clients/new" style={{ background: "#2563eb", color: "#fff", padding: "9px 20px", borderRadius: 8, textDecoration: "none", fontSize: 14, fontWeight: 600 }}>
+        <Link to="/bots/new" style={{ background: "var(--primary)", color: "var(--on-primary)", padding: "9px 20px", borderRadius: 8, textDecoration: "none", fontSize: 14, fontWeight: 600 }}>
           + New Bot
         </Link>
       </div>
 
-      {loading && <p style={{ color: "#64748b" }}>Loading…</p>}
+      {loading && <p style={{ color: "var(--muted-fg)" }}>Loading…</p>}
 
       {!loading && clients.length === 0 && (
-        <p style={{ color: "#64748b" }}>No bots yet. Create your first one above.</p>
+        <p style={{ color: "var(--muted-fg)" }}>No bots yet. Create your first one above.</p>
       )}
 
       {clients.map((c) => (
-        <div key={c.id} style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 12, padding: "18px 22px", marginBottom: 12, display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
+        <div key={c.id} style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, padding: "18px 22px", marginBottom: 12, display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
           <div style={{ flex: 1, minWidth: 220 }}>
             <div style={{ fontWeight: 600, fontSize: 15 }}>
               {c.name}
               {isSuperadmin && c.tenant_name && (
-                <span style={{ marginLeft: 8, background: "#ede9fe", color: "#6d28d9", padding: "1px 8px", borderRadius: 999, fontSize: 11, fontWeight: 600 }}>{c.tenant_name}</span>
+                <span style={{ marginLeft: 8, background: "var(--primary-soft)", color: "var(--primary-text)", padding: "1px 8px", borderRadius: 999, fontSize: 11, fontWeight: 600 }}>{c.tenant_name}</span>
               )}
             </div>
-            <div style={{ color: "#64748b", fontSize: 13 }}>
-              {c.domain} &nbsp;·&nbsp; <code style={{ background: "#f1f5f9", padding: "1px 6px", borderRadius: 4, fontSize: 12 }}>{c.client_id}</code>
+            <div style={{ color: "var(--muted-fg)", fontSize: 13 }}>
+              {c.domain} &nbsp;·&nbsp; <code style={{ background: "var(--surface-3)", padding: "1px 6px", borderRadius: 4, fontSize: 12 }}>{c.client_id}</code>
             </div>
           </div>
 
@@ -78,21 +78,23 @@ export default function ClientsPage() {
             <button
               onClick={() => copyEmbed(c)}
               style={{
-                ...btnStyle(copiedId === c.id ? "#dcfce7" : "#dbeafe", copiedId === c.id ? "#16a34a" : "#1d4ed8"),
+                ...btnStyle(copiedId === c.id ? "var(--success-soft)" : "var(--primary-soft)", copiedId === c.id ? "var(--success)" : "var(--primary-text)"),
                 border: "none",
                 cursor: "pointer",
                 fontFamily: "inherit",
               }}
               title="Copy <script> embed tag"
             >
-              {copiedId === c.id ? "✓ Copied" : "Copy Embed"}
+              {copiedId === c.id ? "Copied" : "Copy Embed"}
             </button>
-            <Link to={`/clients/${c.id}/test`} style={btnStyle("#f0fdfa", "#0f766e")}>Test</Link>
-            <Link to={`/clients/${c.id}/edit`} style={btnStyle("#f1f5f9", "#1e293b")}>Edit</Link>
-            <Link to={`/clients/${c.id}/knowledge`} style={btnStyle("#f1f5f9", "#1e293b")}>Knowledge</Link>
-            <Link to={`/clients/${c.id}/conversations`} style={btnStyle("#f1f5f9", "#1e293b")}>Chats</Link>
-            <Link to={`/clients/${c.id}/leads`} style={btnStyle("#f1f5f9", "#1e293b")}>Leads</Link>
-            <Link to={`/clients/${c.id}/insights`} style={btnStyle("#eff6ff", "#1d4ed8")}>Insights</Link>
+            {/* a plain link, not a router Link: preview.html is a separate static page outside the app */}
+            <a href={`/preview.html?client_id=${encodeURIComponent(c.client_id)}`} target="_blank" rel="noopener" style={btnStyle("var(--accent-soft)", "var(--accent-text)")} title="See the real widget on a stand-in web page">Preview</a>
+            <Link to={`/bots/${c.id}/test`} style={btnStyle("var(--accent-soft)", "var(--accent-text)")} title="Plain chat that also shows AI provider errors">Test</Link>
+            <Link to={`/bots/${c.id}/edit`} style={btnStyle("var(--surface-3)", "var(--fg)")}>Edit</Link>
+            <Link to={`/bots/${c.id}/knowledge`} style={btnStyle("var(--surface-3)", "var(--fg)")}>Knowledge</Link>
+            <Link to={`/bots/${c.id}/conversations`} style={btnStyle("var(--surface-3)", "var(--fg)")}>Chats</Link>
+            <Link to={`/bots/${c.id}/leads`} style={btnStyle("var(--surface-3)", "var(--fg)")}>Leads</Link>
+            <Link to={`/bots/${c.id}/insights`} style={btnStyle("var(--primary-soft)", "var(--primary-text)")}>Insights</Link>
           </div>
         </div>
       ))}
@@ -106,14 +108,14 @@ function ToggleSwitch({ active, disabled, onClick }: { active: boolean; disabled
       type="button"
       onClick={onClick}
       disabled={disabled}
-      title={active ? "Active — click to deactivate" : "Inactive — click to activate"}
+      title={active ? "Active. Click to deactivate" : "Inactive. Click to activate"}
       style={{
         position: "relative",
         width: 46,
         height: 24,
         borderRadius: 999,
         border: "none",
-        background: active ? "#16a34a" : "#cbd5e1",
+        background: active ? "var(--success)" : "var(--border-strong)",
         cursor: disabled ? "wait" : "pointer",
         padding: 0,
         flexShrink: 0,
@@ -129,7 +131,7 @@ function ToggleSwitch({ active, disabled, onClick }: { active: boolean; disabled
           width: 20,
           height: 20,
           borderRadius: "50%",
-          background: "#fff",
+          background: "var(--surface)",
           boxShadow: "0 1px 3px rgba(0,0,0,0.2)",
           transition: "left 0.15s",
         }}

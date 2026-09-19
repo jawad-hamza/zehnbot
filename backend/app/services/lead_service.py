@@ -28,32 +28,102 @@ class ContactDetails:
         return bool(self.email or self.phone)
 
 
-def extract_contact_details(message: str) -> ContactDetails:
+_ASKED_FOR_CONTACT = re.compile(r"\b(phone|number|whats\s?app|call|mobile|e-?mail|contact|details|reach you)\b", re.IGNORECASE)
+
+
+def asked_for_contact(bot_line: Optional[str]) -> bool:
+    return bool(bot_line and _ASKED_FOR_CONTACT.search(bot_line))
+
+
+def extract_contact_details(message: str, bot_said_before: Optional[str] = None) -> ContactDetails:
     """Contact details a visitor typed straight into the chat ("sure, it's sam@acme.com").
 
     Plain pattern matching on purpose: free, instant and predictable, where a second model call
-    per message would be none of those. A name alone is never a lead; it only decorates one."""
+    per message would be none of those. A name alone is never a lead; it only decorates one.
+
+    `bot_said_before` is the bot's previous line. Context decides the doubtful cases: the same
+    "923450237013" is an order number out of the blue, and a phone number right after the bot
+    asked for one."""
     found = ContactDetails()
     email = _EMAIL.search(message)
     if email:
         found.email = email.group(0).rstrip(".").lower()
 
+    invited = asked_for_contact(bot_said_before)
     for match in _PHONE.finditer(message):
         candidate = match.group(1).strip()
         digits = re.sub(r"\D", "", candidate)
         if not 8 <= len(digits) <= 15:
             continue
         # A bare digit run could just as well be an order number or a price. Take it as a phone
-        # number only if it is written like one, or the visitor is talking about calling.
+        # number if it is written like one, the visitor is talking about calling, or it was asked for.
         looks_like_phone = candidate.startswith(("+", "0", "(")) or bool(re.search(r"[\s().\-]", candidate))
-        if looks_like_phone or _PHONE_WORDS.search(message):
+        if looks_like_phone or invited or _PHONE_WORDS.search(message):
             found.phone = candidate
             break
 
     if found:
-        name = _NAME.search(message)
-        if name and name.group(1).split()[0] not in _NOT_NAMES:
-            found.name = name.group(1).strip()
+        found.name = introduced_name(message) or _name_beside_contact(message, bot_said_before)
+    return found
+
+
+def _name_beside_contact(message: str, bot_said_before: Optional[str]) -> Optional[str]:
+    """ "jawad hamza 923450237013": what is left once the email and the number are taken out."""
+    rest = _PHONE.sub(" ", _EMAIL.sub(" ", message))
+    rest = re.sub(r"\s+", " ", rest).strip(" ,;:-–/|")
+    return bare_name_reply(rest, bot_said_before) if rest else None
+
+
+def introduced_name(message: str) -> Optional[str]:
+    """A name the visitor introduced themselves with: "my name is Priya Patel", "I'm Dana"."""
+    match = _NAME.search(message)
+    if match and match.group(1).split()[0] not in _NOT_NAMES:
+        return match.group(1).strip()
+    return None
+
+
+# Short answers that are plainly not a name, in case the bot's previous line happened to mention "name"
+_NOT_A_NAME_REPLY = {
+    "yes", "no", "ok", "okay", "sure", "thanks", "thank you", "hello", "hi", "hey", "bye", "nope", "yep", "yeah",
+    "maybe", "later", "none", "nothing", "not now", "no thanks", "why", "what", "skip", "please", "cool", "great",
+}
+_SENTENCE_WORDS = frozenset(
+    "i i'm im we you it is are was am be do does did can could would will want need like have has get got "
+    "the a an and or but for to of in on at with about from this that what why how when where who which "
+    "please thanks hello hi hey yes no not just my me your our quote price pricing website site help".split()
+)
+_BARE_NAME = re.compile(r"^[^\W\d_][^\W\d_'’.\-]*(?:[ '’.\-]+[^\W\d_][^\W\d_'’.\-]*){0,5}\.?$")
+
+
+def bare_name_reply(message: str, bot_said_before: Optional[str]) -> Optional[str]:
+    """The visitor answering "and your name?" with just "Jawad Hamza".
+
+    Only trusted when the bot had asked: a few words of letters only (any alphabet), right after
+    a bot message that mentions a name. Without that context "Blue Widgets" would become a person."""
+    if not bot_said_before or "name" not in bot_said_before.lower():
+        return None
+    text = message.strip()
+    if not 2 <= len(text) <= 60 or text.lower().rstrip(".!") in _NOT_A_NAME_REPLY:
+        return None
+    if not _BARE_NAME.match(text):
+        return None
+    # "I want a quote for sites" is letters only too; words like these give a sentence away
+    if any(word in _SENTENCE_WORDS for word in re.split(r"[ .\-]+", text.lower())):
+        return None
+    return text.rstrip(".")
+
+
+def name_from_conversation(turns: list) -> Optional[str]:
+    """The visitor's name from earlier in the chat. `turns` is [(role, content), ...] oldest first.
+    People give their name and their email in separate messages more often than in one."""
+    found = None
+    previous_bot_line = None
+    for role, content in turns:
+        if role == "assistant":
+            previous_bot_line = content
+            continue
+        found = introduced_name(content) or _name_beside_contact(content, previous_bot_line) or found
+        previous_bot_line = None
     return found
 
 

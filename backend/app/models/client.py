@@ -1,5 +1,5 @@
 import uuid
-from sqlalchemy import Column, String, Boolean, Text, DateTime, ForeignKey
+from sqlalchemy import Column, String, Boolean, Text, DateTime, ForeignKey, true
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
@@ -18,10 +18,11 @@ class Client(Base):
     bot_name = Column(String(100), nullable=False, default="Assistant")
     system_prompt = Column(Text, nullable=False, default="")
     welcome_message = Column(Text, nullable=False, default="Hi! How can I help you?")
-    theme_color = Column(String(7), nullable=False, default="#2563eb")
+    theme_color = Column(String(7), nullable=False, default="#1a52d7")
     widget_position = Column(String(16), nullable=False, default="bottom-right")
     font_family = Column(String(200), nullable=True)
     custom_css = Column(Text, nullable=True)
+    notification_sound = Column(Boolean, nullable=False, default=True, server_default=true())   # soft chirp when the bot replies
     # A provider id from app/services/providers.py. Only used when the bot has its own key;
     # without one, the platform's provider answers.
     ai_provider = Column(String(32), nullable=False, default="deepseek")

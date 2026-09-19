@@ -10,9 +10,9 @@ import pytest
 from app.models.conversation import Conversation, Message
 from app.models.lead import Lead
 from app.services.ai_service import AIProviderError
-from app.services.chat_service import LEAD_FORM_FALLBACK_AFTER, TagFilter, parse_reply
+from app.services.chat_service import TagFilter, parse_reply
 from app.services.knowledge_service import _fuse
-from app.services.lead_service import extract_contact_details
+from app.services.lead_service import bare_name_reply, extract_contact_details, name_from_conversation
 from tests.conftest import auth
 
 ACME = {"Origin": "https://www.acme.com"}
@@ -61,9 +61,8 @@ def test_text_is_never_held_back_longer_than_a_possible_tag():
 
 
 def test_both_tags_any_case_anywhere():
-    assert parse_reply("I don't have that. [[unanswered]] Shall I pass you on? [[LEAD_FORM]]") == (
-        "I don't have that.  Shall I pass you on?", True, True,
-    )
+    text, tags = parse_reply("I don't have that. [[unanswered]] Shall I pass you on? [[LEAD_FORM]]")
+    assert (text, tags.lead_form, tags.unanswered) == ("I don't have that.  Shall I pass you on?", True, True)
 
 
 def test_lead_form_tag_opens_the_form_and_never_reaches_the_visitor_or_the_transcript(api, db, two_tenants, monkeypatch):
@@ -75,10 +74,40 @@ def test_lead_form_tag_opens_the_form_and_never_reaches_the_visitor_or_the_trans
     assert "[[" not in db.query(Message).filter(Message.role == "assistant").one().content
 
 
-def test_without_the_tag_the_form_is_offered_only_in_a_long_conversation(api, two_tenants, monkeypatch):
+def test_the_form_opens_when_the_bot_asks_for_details_even_if_the_model_forgets_the_tag(api, two_tenants, monkeypatch):
+    """A real DeepSeek conversation: the tag never came, so the form opened late and out of context."""
+    reply_with(monkeypatch, "Easy, that falls under our web work. Want me to pass your details to the team so they can reach out?")
+    assert say(api, "how can i get a website ?").json()["show_lead_form"] is False      # an offer is not the ask
+
+    reply_with(monkeypatch, "Perfect — just drop your name and either an email or phone number here, and I'll make sure the team gets in touch.")
+    assert say(api, "yes i want ur team to contact me").json()["show_lead_form"] is True
+
+
+def test_the_form_never_opens_just_because_a_conversation_is_long(api, two_tenants, monkeypatch):
     reply_with(monkeypatch, "Sure thing.")
-    shown = [say(api, f"question {i}").json()["show_lead_form"] for i in range(LEAD_FORM_FALLBACK_AFTER)]
-    assert shown == [False] * (LEAD_FORM_FALLBACK_AFTER - 1) + [True]
+    assert [say(api, f"question {i}").json()["show_lead_form"] for i in range(9)] == [False] * 9
+
+
+def test_a_bare_phone_number_is_a_lead_when_the_bot_had_asked_for_one(api, db, two_tenants, monkeypatch):
+    reply_with(monkeypatch, "Perfect — just drop your name and either an email or phone number here.")
+    say(api, "yes i want ur team to contact me")
+    reply_with(monkeypatch, "Thanks, Jawad — got it. Someone will reach out on WhatsApp shortly. Anything they should know before they call?")
+    body = say(api, "jawad hamza 923450237013").json()
+
+    assert body["lead_captured"] is True and body["show_lead_form"] is False
+    lead = db.query(Lead).one()
+    assert (lead.name, lead.phone, lead.source) == ("jawad hamza", "923450237013", "chat")
+
+    # and from then on the form stays away, whatever the bot says
+    reply_with(monkeypatch, "What's the best email for you? [[LEAD_FORM]]")
+    assert say(api, "i need a website with dashboard").json()["show_lead_form"] is False
+
+
+def test_the_same_digits_are_not_a_phone_number_out_of_context(api, db, two_tenants, monkeypatch):
+    reply_with(monkeypatch, "Which product is it about?")
+    say(api, "hello")
+    say(api, "my order is 923450237013")
+    assert db.query(Lead).count() == 0
 
 
 # ---- leads typed into the chat ----
@@ -239,3 +268,82 @@ def test_rank_fusion_prefers_passages_both_methods_agree_on():
     fused = _fuse([keyword, semantic])
     assert set(fused[:2]) == {"a", "c"} and set(fused) == {"a", "b", "c", "d"}
     assert _fuse([keyword]) == keyword and _fuse([]) == []
+
+
+# ---- the visitor's name, given in a different message than the contact details ----
+
+def test_name_then_email_in_separate_messages_is_one_complete_lead(api, db, two_tenants, monkeypatch):
+    """The real conversation that exposed the gap: the bot asks, the visitor answers in two steps."""
+    reply_with(monkeypatch, "Perfect, just drop your name and an email or WhatsApp number here.")
+    say(api, "how can i order ?")
+    reply_with(monkeypatch, "Thanks, Jawad, got your name. What's the best email for you?")
+    assert say(api, "Jawad Hamza").json()["lead_captured"] is False        # a name alone is not a lead
+    reply_with(monkeypatch, "Great, that's everything we need.")
+    assert say(api, "jawwadhamzas@gmail.com").json()["lead_captured"] is True
+
+    lead = db.query(Lead).one()
+    assert (lead.name, lead.email, lead.source) == ("Jawad Hamza", "jawwadhamzas@gmail.com", "chat")
+
+
+def test_email_first_and_name_afterwards_also_completes_the_lead(api, db, two_tenants, monkeypatch):
+    reply_with(monkeypatch, "Thanks! And may I take your name?")
+    say(api, "you can reach me at dana@example.com")
+    assert db.query(Lead).one().name is None
+    say(api, "Dana Scully")
+    db.expire_all()
+    assert db.query(Lead).one().name == "Dana Scully"
+
+
+def test_the_model_can_report_the_name_where_patterns_cannot(api, db, two_tenants, monkeypatch):
+    # no "my name is", not capitalised, not a bare reply to a question about names
+    reply_with(monkeypatch, "Noted!")
+    say(api, "btw people call me müller, hans müller")
+    reply_with(monkeypatch, "Wunderbar, wir melden uns. [[NAME: Hans Müller]]")
+    body = say(api, "hans@example.de").json()
+
+    assert body["reply"] == "Wunderbar, wir melden uns."                    # the tag is never shown
+    assert db.query(Lead).one().name == "Hans Müller"
+
+
+def test_a_name_the_visitor_gave_is_never_overwritten_by_the_models_guess(api, db, two_tenants, monkeypatch):
+    reply_with(monkeypatch, "Thanks! [[NAME: Someone Else]]")
+    say(api, "My name is Priya Patel, priya@example.com")
+    assert db.query(Lead).one().name == "Priya Patel"
+
+
+def test_implausible_names_from_the_model_are_ignored(api, db, two_tenants, monkeypatch):
+    reply_with(monkeypatch, "Thanks! [[NAME: dana@example.com]]")
+    say(api, "dana@example.com")
+    assert db.query(Lead).one().name is None
+
+
+def test_name_tag_split_across_stream_chunks_is_hidden_and_used(api, db, two_tenants, monkeypatch):
+    stream_with(monkeypatch, ["All set, ", "we'll be in touch. [[NA", "ME: Dana Sc", "ully]]"])
+    res = say(api, "dana@example.com", path="/api/chat/stream")
+    got = events(res)
+    assert "".join(e["text"] for e in got if e["type"] == "delta") == "All set, we'll be in touch."
+    assert "[[" not in res.text and "Scully" not in res.text
+    assert db.query(Lead).one().name == "Dana Scully"
+
+
+@pytest.mark.parametrize("reply,bot_line,expected", [
+    ("Jawad Hamza", "just drop your name and an email", "Jawad Hamza"),
+    ("jawad hamza", "What's your name?", "jawad hamza"),                 # people do not always capitalise
+    ("José María de la Cruz", "May I have your name?", "José María de la Cruz"),
+    ("O'Brien", "Your name, please?", "O'Brien"),
+    ("yes", "Can I take your name?", None),
+    ("no thanks", "Can I take your name?", None),
+    ("Blue Widgets", "Which product are you interested in?", None),      # the bot did not ask for a name
+    ("I would like a quote for 3 sites", "What's your name?", None),
+    ("tell me the cost first", "What's your name?", None),               # letters only, but plainly a sentence
+    ("Jawad Hamza", None, None),
+])
+def test_a_bare_reply_is_a_name_only_when_the_bot_asked_for_one(reply, bot_line, expected):
+    assert bare_name_reply(reply, bot_line) == expected
+
+
+def test_the_latest_name_in_the_conversation_wins():
+    turns = [("user", "hi"), ("assistant", "What's your name?"), ("user", "Sam"),
+             ("assistant", "Thanks Sam"), ("user", "sorry, I'm Samantha Reed")]
+    assert name_from_conversation(turns) == "Samantha Reed"
+    assert name_from_conversation([("user", "hello"), ("assistant", "Hi!")]) is None

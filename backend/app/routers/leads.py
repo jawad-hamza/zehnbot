@@ -30,7 +30,7 @@ def capture_lead(
 ):
     rate_limit.enforce("lead-ip", rate_limit.client_ip(request), settings.RATE_LEAD_PER_IP_PER_MIN, 60)
     client = require_active_client(body.client_id, db)
-    enforce_widget_origin(origin, client)
+    enforce_widget_origin(origin, client, request)
     lead = save_lead(
         client=client,
         conversation_id=body.conversation_id,

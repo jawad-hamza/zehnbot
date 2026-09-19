@@ -45,6 +45,12 @@ class Settings(BaseSettings):
 
     # Multi-tenancy
     ALLOW_SIGNUP: bool = False
+    # client_id of a bot to run live on the public landing page ("talk to it before you sign up").
+    # Its Website setting needs no entry for the platform's own domain: our own pages are always allowed.
+    LANDING_DEMO_BOT: str = ""
+    # The marketing page when it lives on another website (e.g. https://zehnox.com/zehnbot). Set, the app's own
+    # "/" stops showing a landing page and goes to log in; the logo on the sign-in pages links back there.
+    MARKETING_URL: str = ""
     DEFAULT_SIGNUP_PLAN: str = "free"
 
     # Platform AI: answers for bots that have no key of their own, metered by the tenant's quota.
@@ -76,6 +82,7 @@ class Settings(BaseSettings):
     # Abuse protection
     REDIS_URL: str = ""                    # empty = in-process limiter (single worker only)
     ENFORCE_WIDGET_ORIGIN: bool = True     # reject widget calls whose Origin does not match the bot's domain
+    ALLOW_LOCALHOST_WIDGET: bool = True    # ...except from localhost, so owners can try the widget on their own machine
     MAX_MESSAGE_CHARS: int = 2000
     MAX_CHUNKS_PER_CLIENT: int = 5000
     RATE_CHAT_PER_IP_PER_MIN: int = 20
@@ -85,6 +92,29 @@ class Settings(BaseSettings):
     RATE_LOGIN_PER_IP_PER_5MIN: int = 15
     RATE_LOGIN_PER_ACCOUNT_PER_5MIN: int = 6
     RATE_SIGNUP_PER_IP_PER_HOUR: int = 3
+    RATE_CONTACT_PER_IP_PER_HOUR: int = 5
+    RATE_VERIFY_EMAIL_PER_ADDRESS_PER_HOUR: int = 4
+
+    # Without a mail server nobody can prove an address is theirs, so password sign-up stays closed even when
+    # ALLOW_SIGNUP is true. Set this to true ONLY for local testing: anyone can then register any address.
+    ALLOW_UNVERIFIED_SIGNUP: bool = False
+
+    # ---- outgoing email (any SMTP provider). Sign-up email verification switches on once this is filled in ----
+    SMTP_HOST: str = ""
+    SMTP_PORT: int = 587
+    SMTP_USERNAME: str = ""
+    SMTP_PASSWORD: str = ""
+    SMTP_FROM: str = ""                 # e.g. ZehnBot <no-reply@yourdomain.com>
+    SMTP_SECURITY: str = "starttls"     # starttls (port 587) | ssl (port 465) | none (a local relay only: nothing is encrypted)
+    # Where links in emails and the Google sign-in redirect point. No trailing slash.
+    PUBLIC_BASE_URL: str = "http://localhost:3001"
+
+    # ---- Sign in with Google (OAuth web client). Both empty = the button is not shown ----
+    GOOGLE_CLIENT_ID: str = ""
+    GOOGLE_CLIENT_SECRET: str = ""
+    RATE_STYLE_MATCH_PER_USER_PER_HOUR: int = 20
+    # The landing page's live demo spends the demo bot owner's AI budget, so each visitor gets a daily allowance
+    RATE_LANDING_DEMO_PER_IP_PER_DAY: int = 20
 
     LOG_LEVEL: str = "INFO"
 
@@ -113,6 +143,29 @@ class Settings(BaseSettings):
     @property
     def platform_provider(self) -> str:
         return self.PLATFORM_AI_PROVIDER.strip().lower()
+
+    @property
+    def signup_open(self) -> bool:
+        """Password sign-up. Open only when a new address can be proven real (a mail server is configured),
+        unless the operator has explicitly accepted unverified accounts."""
+        return self.ALLOW_SIGNUP and (self.email_enabled or self.ALLOW_UNVERIFIED_SIGNUP)
+
+    @property
+    def google_signup_open(self) -> bool:
+        """Google has already verified the address, so this needs no mail server."""
+        return self.ALLOW_SIGNUP and self.google_enabled
+
+    @property
+    def email_enabled(self) -> bool:
+        return bool(self.SMTP_HOST.strip() and self.SMTP_FROM.strip())
+
+    @property
+    def google_enabled(self) -> bool:
+        return bool(self.GOOGLE_CLIENT_ID.strip() and self.GOOGLE_CLIENT_SECRET.strip())
+
+    @property
+    def public_base_url(self) -> str:
+        return self.PUBLIC_BASE_URL.strip().rstrip("/")
 
     @property
     def platform_api_key(self) -> str:

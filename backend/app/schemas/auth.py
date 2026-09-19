@@ -16,10 +16,27 @@ class TokenResponse(BaseModel):
     token_type: str = "bearer"
 
 
+class SignupResponse(BaseModel):
+    """Either a session (no email verification configured) or "check your inbox"."""
+    access_token: Optional[str] = None
+    token_type: str = "bearer"
+    verification_required: bool = False
+
+
+class VerifyEmailRequest(BaseModel):
+    token: str = Field(min_length=10, max_length=2000)
+
+
+class ResendVerificationRequest(BaseModel):
+    email: EmailStr
+
+
 class SignupRequest(BaseModel):
     company_name: str = Field(min_length=2, max_length=255)
     email: EmailStr
     password: str = Field(max_length=200)
+    # Honeypot: a field real people never see. Form-filling bots fill everything in.
+    website: Optional[str] = Field(default=None, max_length=500)
 
     @field_validator("password")
     @classmethod
@@ -29,7 +46,8 @@ class SignupRequest(BaseModel):
 
 
 class ChangeCredentialsRequest(BaseModel):
-    current_password: str = Field(min_length=1, max_length=200)
+    # Not needed by a login that has only ever used Google and is setting its first password
+    current_password: Optional[str] = Field(default=None, max_length=200)
     new_email: Optional[str] = Field(default=None, min_length=3, max_length=255)
     new_password: Optional[str] = Field(default=None, max_length=200)
 
@@ -57,7 +75,14 @@ class UserInfo(BaseModel):
     email: str
     role: str
     tenant: Optional[TenantSummary] = None
+    has_password: bool = True
+    google_linked: bool = False
 
 
 class AuthConfig(BaseModel):
     allow_signup: bool
+    demo_client_id: Optional[str] = None
+    google_enabled: bool = False
+    google_signup: bool = False          # may a Google sign-in create a new workspace
+    email_verification: bool = False
+    marketing_url: Optional[str] = None  # where the public landing page lives, when it is not this app

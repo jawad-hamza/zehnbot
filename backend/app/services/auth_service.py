@@ -1,4 +1,6 @@
 import hashlib
+import hmac
+import secrets
 from datetime import datetime, timedelta, timezone
 from functools import lru_cache
 
@@ -57,3 +59,42 @@ def create_access_token(user_id: str, hashed_password: str) -> str:
 
 def decode_token(token: str) -> dict:
     return jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM], options={"require": ["exp", "sub"]})
+
+
+# ---------- passwords that nobody knows ----------
+
+UNUSABLE_PREFIX = "!"   # never a valid bcrypt hash, so no typed password can ever match it
+
+
+def unusable_password() -> str:
+    """For logins that only ever sign in with Google. Random, so the token fingerprint still differs per user."""
+    return UNUSABLE_PREFIX + secrets.token_hex(32)
+
+
+def has_usable_password(hashed: str) -> bool:
+    return not hashed.startswith(UNUSABLE_PREFIX)
+
+
+# ---------- email verification links ----------
+
+VERIFY_EMAIL_HOURS = 24
+
+
+def _verify_key() -> str:
+    # A separate signing key: a verification link can never be replayed as a session token, or the reverse
+    return hashlib.sha256((settings.SECRET_KEY + ":verify-email").encode()).hexdigest()
+
+
+def create_email_verification_token(user_id: str, email: str) -> str:
+    now = datetime.now(timezone.utc)
+    payload = {"sub": user_id, "eml": hashlib.sha256(email.lower().encode()).hexdigest()[:16],
+               "iat": now, "exp": now + timedelta(hours=VERIFY_EMAIL_HOURS)}
+    return jwt.encode(payload, _verify_key(), algorithm="HS256")
+
+
+def read_email_verification_token(token: str) -> dict:
+    return jwt.decode(token, _verify_key(), algorithms=["HS256"], options={"require": ["exp", "sub", "eml"]})
+
+
+def email_matches_token(email: str, payload: dict) -> bool:
+    return hmac.compare_digest(str(payload.get("eml", "")), hashlib.sha256(email.lower().encode()).hexdigest()[:16])

@@ -1,5 +1,6 @@
 """Super admin only: manage customer accounts (tenants), their plans, limits and logins."""
 import uuid
+from datetime import datetime, timezone
 from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -107,7 +108,8 @@ def add_tenant_user(tenant_id: uuid.UUID, body: TenantUserCreate, db: Session = 
     email = normalise_login(body.email)
     if db.query(User.id).filter(User.email == email).first():
         raise HTTPException(status_code=409, detail="That email is already registered")
-    user = User(email=email, hashed_password=hash_password(body.password), role=ROLE_TENANT_ADMIN, tenant_id=tenant.id)
+    user = User(email=email, hashed_password=hash_password(body.password), role=ROLE_TENANT_ADMIN, tenant_id=tenant.id,
+                email_verified_at=datetime.now(timezone.utc))   # created by the operator: nothing to confirm
     db.add(user)
     db.commit()
     db.refresh(user)

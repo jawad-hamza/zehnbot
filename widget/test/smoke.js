@@ -40,7 +40,11 @@ function makeServer(log, behaviour) {
     const path = new URL(url).pathname;
     const body = options.body ? JSON.parse(options.body) : null;
     log.push({ path, body });
-    if (path === "/api/widget/config") return new Response(JSON.stringify(CONFIG), { status: 200 });
+    if (path === "/api/widget/config") {
+      if (behaviour.config === "forbidden") return new Response(JSON.stringify({ detail: "not allowed" }), { status: 403 });
+      return new Response(JSON.stringify({ ...CONFIG, ...(behaviour.configOverride || {}) }), { status: 200 });
+    }
+    if (path === "/api/chat/stream" && behaviour.chat === "forbidden") return new Response("{}", { status: 403 });
     if (path === "/api/chat/stream") {
       if (behaviour.chat === "limited") return new Response("{}", { status: 429 });
       const pieces = REPLY.match(/[\s\S]{1,9}/g).map((text) => ({ type: "delta", text }));
@@ -53,22 +57,35 @@ function makeServer(log, behaviour) {
 }
 
 async function load(stored, behaviour = {}) {
-  const dom = new JSDOM(`<!doctype html><html><head><style>div, button, input { display: none !important; color: red; }</style></head>
+  const dom = new JSDOM(`<!doctype html><html><head><style>div, button, input { display: none !important; color: red; } body { font-family: "Site Grotesk", Georgia, serif; }</style></head>
     <body><div id="cb-panel">the site's own element with a clashing id</div>
     <script src="https://chat.example/static/widget.js?client_id=acme-bot"></script></body></html>`,
     { url: "https://www.acme.com/pricing", runScripts: "outside-only", pretendToBeVisual: true });
   const w = dom.window;
   const log = [];
   Object.assign(w, { fetch: makeServer(log, behaviour), Response, ReadableStream, TextDecoder, TextEncoder });
+
+  // jsdom has no Web Audio. This stand-in only counts the notes the widget asks for.
+  const notes = [];
+  const param = () => ({ setValueAtTime() {}, exponentialRampToValueAtTime() {} });
+  w.AudioContext = class {
+    constructor() { this.state = "running"; this.currentTime = 0; this.destination = {}; }
+    resume() {}
+    createOscillator() { return { frequency: param(), connect: (x) => x, start: () => notes.push("note"), stop() {} }; }
+    createGain() { return { gain: param(), connect: (x) => x }; }
+  };
+  if (behaviour.muted) w.localStorage.setItem("cb_muted", "1");
   w.HTMLElement.prototype.focus = function () {};
   if (stored) w.sessionStorage.setItem("cb_chat_acme-bot", stored);
   const errors = [];
   w.addEventListener("error", (e) => errors.push(String(e.error || e.message)));
   w.console.error = (...a) => errors.push(a.join(" "));
+  const warnings = [];
+  w.console.warn = (...a) => warnings.push(a.join(" "));
   w.eval(BUNDLE);
   await tick(60);
   const host = w.document.getElementById("cb-widget-root");
-  return { w, log, errors, host, root: host && host.shadowRoot, $: (id) => host.shadowRoot.getElementById(id) };
+  return { w, log, errors, warnings, notes, host, root: host && host.shadowRoot, $: (id) => host.shadowRoot.getElementById(id) };
 }
 
 // Wait for the widget to finish (send button re-enabled), not for a guessed amount of time
@@ -153,6 +170,56 @@ async function send(page, text) {
   await send(page, "hello");
   const after = [...page.root.querySelectorAll(".cb-msg")];
   check("a reply that breaks mid-stream keeps what arrived and says so", after.length === 4 && after[2].textContent.startsWith("We have") && after[3].classList.contains("cb-msg--error"), after.map((b) => b.textContent.slice(0, 30)));
+
+  console.log("typing: Enter sends, Shift+Enter starts a new line");
+  page = await load();
+  const box = page.$("cb-input");
+  check("the message box is multi-line", box.tagName === "TEXTAREA");
+  box.value = "line one";
+  const key = (opts) => box.dispatchEvent(new page.w.KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true, composed: true, ...opts }));
+  const shiftEnterLeftAlone = key({ shiftKey: true });      // dispatchEvent returns false when preventDefault() was called
+  await tick(40);
+  check("Shift+Enter does not send, and is not blocked (the browser inserts the new line)", shiftEnterLeftAlone === true && !page.log.some((r) => r.path === "/api/chat/stream"));
+  box.value = "line one\nline two";
+  const enterHandled = key({});
+  check("Enter sends instead of adding a line", enterHandled === false);
+  for (let i = 0; i < 400 && page.$("cb-send").disabled; i++) await tick(25);
+  const sentBody = page.log.find((r) => r.path === "/api/chat/stream").body;
+  check("both lines reach the server as one message", sentBody.message === "line one\nline two", sentBody.message);
+  check("the visitor's bubble keeps the line break, and the box is emptied", [...page.root.querySelectorAll(".cb-msg--user")].at(-1).textContent === "line one\nline two" && box.value === "");
+
+  console.log("message sound");
+  check("a reply plays the two-note chirp once", page.notes.length === 2, page.notes.length);
+  const mute = page.$("cb-mute");
+  check("the visitor gets a labelled mute button", mute && mute.getAttribute("aria-label") === "Mute message sound" && mute.getAttribute("aria-pressed") === "false");
+  mute.click();
+  await send(page, "again");
+  check("muted: no sound, and the choice is remembered", page.notes.length === 2 && mute.getAttribute("aria-pressed") === "true" && page.w.localStorage.getItem("cb_muted") === "1", page.notes.length);
+  page = await load(null, { muted: true });
+  await send(page, "hello");
+  check("a visitor who muted it earlier stays muted on the next visit", page.notes.length === 0 && page.$("cb-mute").getAttribute("aria-pressed") === "true");
+  page = await load(null, { configOverride: { notification_sound: false } });
+  await send(page, "hello");
+  check("the site owner can switch the sound off for the bot: silent, and no mute button", page.notes.length === 0 && page.$("cb-mute") === null);
+
+  console.log("matching the website");
+  const css = (pg) => [...pg.root.querySelectorAll("style")].map((el) => el.textContent).join(" ");
+  page = await load(null);
+  check("with no font chosen, the widget uses the website's own typeface", /--cb-font:\s*"?Site Grotesk/.test(css(page)), css(page).slice(0, 300));
+  check("a deep brand colour gets white text", /--cb-on-theme:\s*#ffffff/.test(css(page)));
+  page = await load(null, { configOverride: { theme_color: "#cefd21", font_family: '"Work Sans", sans-serif' } });
+  check("a pale brand colour (lime) gets dark text instead of unreadable white", /--cb-on-theme:\s*#13101f/.test(css(page)), css(page).slice(0, 300));
+  check("...and links on the white panel use a deepened version of it", !/--cb-theme-text:\s*#cefd21/.test(css(page)) && /--cb-theme-text:\s*#[0-9a-f]{6}/.test(css(page)));
+  check("a font chosen in the dashboard wins over the page's", /--cb-font:\s*"Work Sans"/.test(css(page)));
+
+  console.log("websites that are not allowed");
+  page = await load(null, { config: "forbidden" });
+  check("the widget does not appear at all on a website the bot is not set up for", page.host === null && page.errors.length === 0, page.errors);
+  check("...and the console tells the site owner why, and how to fix it", page.warnings.some((t) => t.includes("www.acme.com") && t.includes("Website setting")), page.warnings);
+  page = await load(null, { chat: "forbidden" });
+  await send(page, "hello");
+  last = [...page.root.querySelectorAll(".cb-msg")].at(-1);
+  check("a refused chat says so, instead of 'something went wrong'", last.textContent.includes("isn't available on this website"), last.textContent);
 
   console.log(`\n${results.filter(Boolean).length}/${results.length} checks passed`);
   process.exit(results.every(Boolean) ? 0 : 1);

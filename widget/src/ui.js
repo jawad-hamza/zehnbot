@@ -3,6 +3,10 @@ import { renderRichText } from "./richtext.js";
 
 const CHAT_ICON = `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>`;
 
+const ICON_ATTRS = `width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"`;
+const SOUND_ON_ICON = `<svg ${ICON_ATTRS}><path d="M11 5 6 9H2v6h4l5 4V5z"></path><path d="M15.5 8.5a5 5 0 0 1 0 7"></path><path d="M18.5 5.5a9 9 0 0 1 0 13"></path></svg>`;
+const SOUND_OFF_ICON = `<svg ${ICON_ATTRS}><path d="M11 5 6 9H2v6h4l5 4V5z"></path><path d="m22 9-6 6"></path><path d="m16 9 6 6"></path></svg>`;
+
 export function buildWidget(config) {
   // One host element on the page; everything else lives in its shadow root, so the customer's
   // CSS cannot break the widget and the widget's ids/classes cannot collide with the page's.
@@ -31,14 +35,17 @@ export function buildWidget(config) {
   panel.innerHTML = `
     <div id="cb-header">
       <span id="cb-botname"></span>
-      <button id="cb-close" type="button" aria-label="Close chat">&#x2715;</button>
+      <span id="cb-header-actions">
+        <button id="cb-mute" type="button" aria-pressed="false" aria-label="Mute message sound"></button>
+        <button id="cb-close" type="button" aria-label="Close chat">&#x2715;</button>
+      </span>
     </div>
     <div id="cb-messages" role="log" aria-live="polite" aria-relevant="additions">
       <div id="cb-typing" role="status" aria-label="Assistant is typing"><span></span><span></span><span></span></div>
     </div>
     <div id="cb-lead-form" role="group" aria-label="Leave your contact details">
       <button id="cb-lead-dismiss" type="button" aria-label="Not now">&#x2715;</button>
-      <div id="cb-lead-hint">Leave your email or phone so our team can follow up — both is even better.</div>
+      <div id="cb-lead-hint">Leave your email or phone so our team can follow up. Both is even better.</div>
       <input id="cb-lead-name"  type="text"  placeholder="Your name"  aria-label="Your name"  autocomplete="name"  maxlength="255" />
       <input id="cb-lead-email" type="email" placeholder="Your email" aria-label="Your email" autocomplete="email" maxlength="255" />
       <input id="cb-lead-phone" type="tel"   placeholder="Your phone" aria-label="Your phone" autocomplete="tel"   maxlength="30" />
@@ -46,7 +53,7 @@ export function buildWidget(config) {
       <button id="cb-lead-submit" type="button">Send my details</button>
     </div>
     <div id="cb-input-row">
-      <input id="cb-input" type="text" placeholder="Type a message…" aria-label="Type a message" autocomplete="off" maxlength="2000" enterkeyhint="send" />
+      <textarea id="cb-input" rows="1" placeholder="Type a message…" aria-label="Type a message. Enter sends, Shift+Enter starts a new line." autocomplete="off" maxlength="2000" enterkeyhint="send"></textarea>
       <button id="cb-send" type="button">Send</button>
     </div>
   `;
@@ -99,12 +106,53 @@ export function buildWidget(config) {
   });
   // Typing in the chat must not fire the host page's keyboard shortcuts ("/" to search, "s" to star, ...)
   ["keydown", "keyup", "keypress"].forEach((type) => panel.addEventListener(type, (e) => e.stopPropagation()));
+  // Enter sends; Shift+Enter is left alone, so the textarea does what it always does: a new line.
+  // (isComposing: Enter that confirms an IME suggestion, e.g. in Japanese, must not send.)
   inputEl.addEventListener("keydown", (e) => {
     if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
       e.preventDefault();
       sendBtn.click();
     }
   });
+
+  // The box grows with the message, up to a few lines, then scrolls
+  const MAX_INPUT_HEIGHT = 112;
+  function fitInput() {
+    inputEl.style.height = "auto";
+    inputEl.style.height = Math.min(inputEl.scrollHeight, MAX_INPUT_HEIGHT) + "px";
+    inputEl.style.overflowY = inputEl.scrollHeight > MAX_INPUT_HEIGHT ? "auto" : "hidden";
+  }
+  inputEl.addEventListener("input", fitInput);
+
+  // Sound: on unless the site owner switched it off for this bot; each visitor can mute it for themselves
+  const muteBtn = $("cb-mute");
+  const soundOffered = config.notification_sound !== false;
+  let muted = false;
+  try {
+    muted = localStorage.getItem("cb_muted") === "1";
+  } catch {
+    /* storage blocked: the choice just won't be remembered */
+  }
+  function renderMute() {
+    muteBtn.innerHTML = muted ? SOUND_OFF_ICON : SOUND_ON_ICON;
+    muteBtn.setAttribute("aria-pressed", String(muted));
+    muteBtn.setAttribute("aria-label", muted ? "Unmute message sound" : "Mute message sound");
+    muteBtn.title = muted ? "Sound is off" : "Sound is on";
+  }
+  if (soundOffered) {
+    renderMute();
+    muteBtn.addEventListener("click", () => {
+      muted = !muted;
+      try {
+        localStorage.setItem("cb_muted", muted ? "1" : "0");
+      } catch {
+        /* see above */
+      }
+      renderMute();
+    });
+  } else {
+    muteBtn.remove();
+  }
 
   /** Adds a bubble and returns a handle for updating it (used while a reply streams in). */
   function appendMessage(role, text, { error = false } = {}) {
@@ -145,6 +193,11 @@ export function buildWidget(config) {
     leadDismiss: $("cb-lead-dismiss"),
     setOpen,
     isOpen: () => panel.classList.contains("cb-open"),
+    soundOn: () => soundOffered && !muted,
+    clearInput: () => {
+      inputEl.value = "";
+      fitInput();
+    },
     onOpenChange: (fn) => openListeners.push(fn),
     showLeadForm: (show) => {
       leadForm.classList.toggle("cb-open", show);

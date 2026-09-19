@@ -10,6 +10,11 @@ export default defineConfig({
         target: "http://localhost:8000",
         changeOrigin: true,
       },
+      // the widget bundle, so /preview.html works in dev too
+      "/static": {
+        target: "http://localhost:8000",
+        changeOrigin: true,
+      },
     },
   },
 });

@@ -12,13 +12,21 @@ import SettingsPage from "./pages/SettingsPage";
 import TestChatPage from "./pages/TestChatPage";
 import TenantsPage from "./pages/TenantsPage";
 import AnalyticsPage from "./pages/AnalyticsPage";
+import OverviewPage from "./pages/OverviewPage";
+import HomeRoute from "./pages/HomeRoute";
+import EnquiriesPage from "./pages/EnquiriesPage";
+import { AuthCallbackPage, VerifyEmailPage } from "./pages/AuthLandingPages";
+
 
 export default function App() {
   return (
     <BrowserRouter>
       <Routes>
+        <Route path="/" element={<HomeRoute />} />
         <Route path="/login" element={<LoginPage />} />
         <Route path="/signup" element={<SignupPage />} />
+        <Route path="/verify-email" element={<VerifyEmailPage />} />
+        <Route path="/auth/callback" element={<AuthCallbackPage />} />
         <Route
           element={
             <ProtectedRoute>
@@ -26,18 +34,22 @@ export default function App() {
             </ProtectedRoute>
           }
         >
-          <Route index element={<Navigate to="/clients" replace />} />
+          <Route path="overview" element={<OverviewPage />} />
           <Route path="tenants" element={<TenantsPage />} />
-          <Route path="clients" element={<ClientsPage />} />
-          <Route path="clients/new" element={<ClientEditPage />} />
-          <Route path="clients/:id/edit" element={<ClientEditPage />} />
-          <Route path="clients/:id/knowledge" element={<KnowledgePage />} />
-          <Route path="clients/:id/conversations" element={<ConversationsPage />} />
-          <Route path="clients/:id/leads" element={<LeadsPage />} />
-          <Route path="clients/:id/test" element={<TestChatPage />} />
-          <Route path="clients/:id/insights" element={<AnalyticsPage />} />
+          <Route path="enquiries" element={<EnquiriesPage />} />
+          <Route path="bots" element={<ClientsPage />} />
+          <Route path="bots/new" element={<ClientEditPage />} />
+          <Route path="bots/:id/edit" element={<ClientEditPage />} />
+          <Route path="bots/:id/knowledge" element={<KnowledgePage />} />
+          <Route path="bots/:id/conversations" element={<ConversationsPage />} />
+          <Route path="bots/:id/leads" element={<LeadsPage />} />
+          <Route path="bots/:id/test" element={<TestChatPage />} />
+          <Route path="bots/:id/insights" element={<AnalyticsPage />} />
           <Route path="settings" element={<SettingsPage />} />
+          {/* bookmarks from before the rename keep working */}
+          <Route path="clients/*" element={<Navigate to="/bots" replace />} />
         </Route>
+        <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </BrowserRouter>
   );

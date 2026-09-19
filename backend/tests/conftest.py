@@ -15,6 +15,7 @@ os.environ.update(
     SECRET_KEY="test-secret-key-that-is-long-enough-0123456789",
     ENCRYPTION_KEY=Fernet.generate_key().decode(),
     ALLOW_SIGNUP="true",
+    ALLOW_UNVERIFIED_SIGNUP="true",     # most tests sign up without a mail server; the gate has tests of its own
     PLATFORM_AI_API_KEY="platform-test-key",
     OPENAI_API_KEY="",
     REDIS_URL="",

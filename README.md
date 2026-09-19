@@ -1,6 +1,6 @@
-# ChatBot SaaS
+# ZehnBot
 
-A multi-tenant AI chatbot platform. Customers (tenants) create bots, load them with knowledge,
+A multi-tenant AI chatbot platform (product name: ZehnBot, by Zehnox). Customers (tenants) create bots, load them with knowledge,
 and embed them on their websites with one script tag. You operate the platform as super admin.
 
 ```
@@ -95,8 +95,101 @@ cp .env.example .env        # then fill it in; the file explains each value
 docker compose up -d --build
 ```
 
-Dashboard: <http://localhost:3001>. Sign in with `ADMIN_SEED_EMAIL` / `ADMIN_SEED_PASSWORD`.
+Open <http://localhost:3001>. Sign in with `ADMIN_SEED_EMAIL` / `ADMIN_SEED_PASSWORD`.
 On start the backend applies migrations and creates the super admin if none exists.
+
+### What is where
+
+| Address          | What it is                                                                                  |
+|------------------|---------------------------------------------------------------------------------------------|
+| `/`              | The public landing page (light and dark). Its calls to action follow `ALLOW_SIGNUP`.        |
+| `/signup`        | Self-service registration: creates a workspace on `DEFAULT_SIGNUP_PLAN` and logs the owner in. Closed (with a way to ask for access) when `ALLOW_SIGNUP=false`. |
+| `/login`         | Everyone signs in here. The role decides which dashboard opens.                              |
+| `/overview`      | Customers: their workspace (setup checklist, conversations, leads, open questions, quota). Super admin: the operator console (every workspace, sign-ups, usage against quota, system status). |
+| `/bots`, `/settings` | Bots and their knowledge, conversations, leads and insights; workspace name, login and appearance. |
+| `/tenants`       | Super admin only: create, suspend and delete workspaces, set plans and limits, reset logins. |
+| `/enquiries`     | Super admin only: people who pressed **Talk to Zehnox** (the platform's own leads). Mark as contacted, close, export CSV. |
+| `/verify-email`, `/auth/callback` | Where the confirmation email's link and Google sign-in land. Nobody navigates here by hand. |
+
+**Live demo on the landing page.** Set `LANDING_DEMO_BOT` to the client id of a bot you are happy
+for the public to talk to. The landing page then shows a real, streaming conversation with it
+(that workspace's quota applies, and each visitor's IP address gets `RATE_LANDING_DEMO_PER_IP_PER_DAY` messages a day, 20 by default; the bot's own website is not affected by this allowance). Leave it empty and the page shows a screenshot instead.
+
+**Talk to Zehnox.** Every "Talk to Zehnox" button (landing page, pricing, closed sign-up, a
+customer's plan line in Settings) opens a short form: a name, an email or a phone number, what they
+need. It is stored as an enquiry (`POST /api/contact`, rate limited per visitor, with a honeypot) and
+shown to the super admin under **Enquiries**, with an alert on the operator overview while any are new.
+
+**A new bot matches its website.** "Match my website's colours and font" is ticked by default on
+the new-bot form. The backend reads the site's homepage and stylesheets through the same SSRF guard
+as the crawler, ranks the colours and fonts the site really uses (brand variables, filled buttons,
+the body font, resolving `var(--font)`), and lets the AI choose among them. The AI can only pick a
+value that was found in the site's own CSS, so page content cannot steer it anywhere else; with no
+AI key, or if the call fails, the ranking decides. An existing bot has a **Match my website** button.
+The widget also picks readable text for any brand colour (dark text on a lime, white on a navy), and
+with no font set it uses the font of the page it sits on.
+
+### Email verification and Sign in with Google
+
+Both are **off until configured**, so a fresh install works with nothing to set up.
+
+**No mail server means no open password sign-up.** With `ALLOW_SIGNUP=true` but no SMTP settings, the sign-up
+form stays closed and visitors are offered the contact form instead (it lands in Enquiries), because otherwise
+anyone could register with an address that is not theirs. The operator overview says so, and tells you what to
+set. Sign in with Google can still create accounts, since Google has confirmed the address. For local testing
+only, `ALLOW_UNVERIFIED_SIGNUP=true` opens it anyway. Check your mail settings with
+`docker compose exec backend python scripts/send_test_email.py you@example.com`.
+
+| To switch on | Set in `.env` | What changes |
+|---|---|---|
+| Email verification | `SMTP_HOST`, `SMTP_FROM` (plus `SMTP_USERNAME` / `SMTP_PASSWORD`, and `PUBLIC_BASE_URL`) | A sign-up gets "check your inbox" instead of a session, and cannot log in until the emailed link (valid 24 hours) is opened. Logins created by the operator, and every login that existed before, count as verified. |
+| Sign in with Google | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `PUBLIC_BASE_URL` | A "Continue with Google" button on log in and sign up. |
+
+Any SMTP provider works (Gmail with an app password: `smtp.gmail.com`, port 587). For Google, create
+an OAuth client of type *Web application* and add the redirect URI
+`<PUBLIC_BASE_URL>/api/auth/google/callback` (for local testing: `http://localhost:3001/api/auth/google/callback`).
+
+How it is built, because these are the parts that get attacked:
+- Google uses the server-side authorisation-code flow. No Google script runs in the dashboard, so its
+  Content-Security-Policy stays `script-src 'self'`. The ID token is verified against Google's signing
+  keys (audience, issuer, expiry, `email_verified`), a state cookie blocks sign-ins started by another
+  site, and the session comes back in the URL fragment, which never reaches a server or a log.
+- Verification links are signed with a key derived separately from the session key: a link can never be
+  used as a session, nor a session as a link. A link dies if the address changes.
+- An address that was registered but never confirmed can be registered again by whoever owns the inbox
+  (the new password replaces the old one). Signing in with Google to such an address discards the
+  password that was set on it. Both close the "register the victim's email first, then wait" attack.
+- "Send a new link" answers the same way whether or not the address has an account.
+
+### The landing page lives on zehnox.com
+
+ZehnBot's public landing page is a page of the ZEHNOX website (`https://zehnox.com/zehnbot`, in the separate
+`zehnox-site` repository), not of this app. This app is the product itself and is meant to run on its own host
+(`https://bot.zehnox.com`); every "Start free" and "Log in" on the landing page points here.
+
+- `MARKETING_URL=https://zehnox.com/zehnbot` tells the app so: its own `/` then goes to log in (or to the
+  dashboard when signed in), and the logo on the sign-in pages links back to the landing page. Left empty, the
+  app serves its built-in landing page at `/`, which is what a fresh local install does.
+- **Prices are edited here, shown there.** Super admin > Settings > *Plans and pricing* sets the price, the one
+  line under it, the currency and the recommended plan. `GET /api/public/plans` (no login, any origin, cached
+  five minutes) combines them with the real limits from `PLANS` in `backend/app/config.py`; the landing page
+  reads it and falls back to the prices in its own HTML when this app cannot be reached. Changing a price
+  charges nobody: billing is still arranged by hand.
+- "Talk to Zehnox" on the landing page is the ZEHNOX site's own consultation form. Inside the app (closed
+  sign-up, a customer's plan line) it is the contact dialog that lands in **Enquiries**.
+
+### Brand
+
+Colours come from `Zehnox branding.pdf`, read as vectors: navy `#021b8c`, blue `#1a52d7`, grey `#767887`,
+paper `#f2f4f5`, ink `#13101f`, lime `#cefd21`. Light theme: paper ground, navy working colour. Dark theme:
+ink ground, lime working colour with ink text on it. All tokens live in `admin-dashboard/src/styles/theme.css`.
+The ZehnBot mark is `logo-icon.png` (transparent), cut to sizes in `admin-dashboard/public/brand/`, next to the Zehnox
+mark, lockup and wordmark as SVG (extracted from the PDF's own outlines, for light and dark grounds).
+
+**Demo data.** `docker compose exec backend python scripts/seed_demo.py --yes` fills an EMPTY
+installation with fictional workspaces, bots, conversations and leads. It refuses to run once any
+workspace exists, so it can never touch real data. The landing page's screenshots
+(`admin-dashboard/public/shots/`) were captured from exactly this data.
 
 ### Production (HTTPS)
 

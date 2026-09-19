@@ -1,45 +1,24 @@
-import { useEffect } from "react";
-import { Outlet, NavLink, useLocation, useNavigate } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { api } from "../api/client";
 import { useAuthStore } from "../store/authStore";
+import ThemeToggle from "./ThemeToggle";
+import { BrandMark, IconBot, IconHome, IconLogout, IconMenu, IconInbox, IconSettings, IconUsers } from "./icons";
 
-const navStyle: React.CSSProperties = {
-  display: "flex",
-  flexDirection: "column",
-  width: 220,
-  minHeight: "100vh",
-  background: "#1e293b",
-  padding: "24px 0",
-  gap: 4,
-  flexShrink: 0,
-};
-
-const linkBase: React.CSSProperties = {
-  padding: "10px 24px",
-  color: "#94a3b8",
-  textDecoration: "none",
-  fontSize: 14,
-  fontWeight: 500,
-  borderRadius: 0,
-  transition: "background 0.1s, color 0.1s",
-};
-
-const linkStyle = ({ isActive }: { isActive: boolean }): React.CSSProperties => ({
-  ...linkBase,
-  color: isActive ? "#f1f5f9" : "#94a3b8",
-  background: isActive ? "#334155" : "transparent",
-});
-
+/** The signed-in shell. One component, two workspaces: what the sidebar offers depends on the
+ *  role, so the operator's console and a customer's dashboard never show each other's tools. */
 export default function Layout() {
   const logout = useAuthStore((s) => s.logout);
   const me = useAuthStore((s) => s.me);
   const setMe = useAuthStore((s) => s.setMe);
   const navigate = useNavigate();
   const location = useLocation();
+  const [menuOpen, setMenuOpen] = useState(false);
 
   // Refreshed on every navigation so the usage meter stays current
   useEffect(() => {
     api.get("/auth/me").then((r) => setMe(r.data)).catch(() => undefined);
+    setMenuOpen(false);
   }, [location.pathname, setMe]);
 
   function handleLogout() {
@@ -47,47 +26,67 @@ export default function Layout() {
     navigate("/login");
   }
 
-  const tenant = me?.tenant ?? null;
-  const quotaUsed = tenant ? Math.min(100, Math.round((tenant.platform_messages_this_month / Math.max(1, tenant.monthly_message_quota)) * 100)) : 0;
+  const isOperator = me?.role === "superadmin";
+  const workspace = me?.tenant ?? null;
+  const used = workspace ? workspace.platform_messages_this_month / Math.max(1, workspace.monthly_message_quota) : 0;
+  const meterClass = used >= 1 ? "zb-meter zb-meter--danger" : used >= 0.8 ? "zb-meter zb-meter--warn" : "zb-meter";
+  const initials = (me?.email ?? "?").slice(0, 2).toUpperCase();
 
   return (
-    <div style={{ display: "flex", minHeight: "100vh" }}>
-      <nav style={navStyle}>
-        <div style={{ padding: "0 24px 20px", color: "#f1f5f9", fontWeight: 700, fontSize: 16, borderBottom: "1px solid #334155", marginBottom: 8 }}>
-          ChatBot Admin
-          {me && (
-            <div style={{ fontSize: 11, fontWeight: 500, color: "#94a3b8", marginTop: 4 }}>
-              {me.role === "superadmin" ? "Platform operator" : tenant?.name}
-            </div>
-          )}
-        </div>
-        {me?.role === "superadmin" && (
-          <NavLink to="/tenants" style={linkStyle}>Tenants</NavLink>
-        )}
-        <NavLink to="/clients" style={linkStyle}>Bots</NavLink>
-        <NavLink to="/settings" style={linkStyle}>Settings</NavLink>
+    <div className="zb-shell">
+      <button type="button" className={`zb-scrim${menuOpen ? " open" : ""}`} aria-label="Close menu" onClick={() => setMenuOpen(false)} />
 
-        <div style={{ marginTop: "auto", padding: "24px 24px 0" }}>
-          {tenant && (
-            <div style={{ marginBottom: 16, fontSize: 11, color: "#94a3b8", lineHeight: 1.6 }}>
-              <div style={{ textTransform: "uppercase", letterSpacing: 0.5, color: "#cbd5e1", fontWeight: 700 }}>{tenant.plan} plan</div>
-              <div>{tenant.bots_used} / {tenant.max_bots} bots</div>
-              <div title="Messages answered with the platform's AI key. Bots using your own key are not limited.">
-                {tenant.platform_messages_this_month.toLocaleString()} / {tenant.monthly_message_quota.toLocaleString()} messages
+      <nav className={`zb-sidebar${menuOpen ? " open" : ""}`} aria-label="Main">
+        <Link to="/overview" className="zb-brand"><BrandMark /> ZehnBot</Link>
+
+        <div className="zb-nav-section">{isOperator ? "Platform" : "Workspace"}</div>
+        <NavLink to="/overview" className="zb-nav-link"><IconHome /> Overview</NavLink>
+        {isOperator && <NavLink to="/tenants" className="zb-nav-link"><IconUsers /> Tenants</NavLink>}
+        {isOperator && <NavLink to="/enquiries" className="zb-nav-link"><IconInbox /> Enquiries</NavLink>}
+        <NavLink to="/bots" className="zb-nav-link"><IconBot /> {isOperator ? "All bots" : "Bots"}</NavLink>
+
+        <div className="zb-nav-section">Account</div>
+        <NavLink to="/settings" className="zb-nav-link"><IconSettings /> Settings</NavLink>
+
+        <div className="zb-sidebar-foot">
+          {workspace && (
+            <div className="zb-usage">
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center" }}>
+                <span className="zb-badge zb-badge--primary" style={{ textTransform: "capitalize" }}>{workspace.plan} plan</span>
+                <span>{workspace.bots_used} / {workspace.max_bots} bots</span>
               </div>
-              <div style={{ height: 4, background: "#334155", borderRadius: 2, marginTop: 6 }}>
-                <div style={{ height: 4, width: `${quotaUsed}%`, background: quotaUsed >= 90 ? "#f87171" : "#38bdf8", borderRadius: 2 }} />
+              <div style={{ marginTop: 10 }} title="Messages answered with the platform's AI. Bots that use your own AI key are not limited.">
+                {workspace.platform_messages_this_month.toLocaleString()} of {workspace.monthly_message_quota.toLocaleString()} messages this month
+              </div>
+              <div className={meterClass} role="progressbar" aria-label="Monthly message quota used"
+                aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.min(100, Math.round(used * 100))}>
+                <span style={{ width: `${Math.min(100, Math.round(used * 100))}%` }} />
               </div>
             </div>
           )}
-          <button onClick={handleLogout} style={{ background: "none", border: "1px solid #475569", color: "#94a3b8", padding: "8px 16px", borderRadius: 6, cursor: "pointer", fontSize: 13, width: "100%" }}>
-            Log out
+          <button type="button" className="zb-nav-link" onClick={handleLogout} style={{ width: "100%", border: "none", background: "none", textAlign: "left" }}>
+            <IconLogout /> Log out
           </button>
         </div>
       </nav>
-      <main style={{ flex: 1, padding: 32, maxWidth: 960 }}>
-        <Outlet />
-      </main>
+
+      <div className="zb-main">
+        <header className="zb-topbar">
+          <button type="button" className="zb-icon-btn zb-menu-btn" aria-label="Open menu" aria-expanded={menuOpen} onClick={() => setMenuOpen(true)}>
+            <IconMenu />
+          </button>
+          <span className="zb-topbar-title">{isOperator ? "Operator console" : workspace?.name ?? ""}</span>
+          <span className="zb-topbar-spacer" />
+          <ThemeToggle />
+          <div className="zb-user">
+            <span>{me?.email}</span>
+            <div className="zb-avatar" aria-hidden="true">{initials}</div>
+          </div>
+        </header>
+        <main className="zb-content">
+          <Outlet />
+        </main>
+      </div>
     </div>
   );
 }

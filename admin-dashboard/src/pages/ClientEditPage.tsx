@@ -34,11 +34,13 @@ export default function ClientEditPage() {
     setError("");
     try {
       if (isNew) {
-        await api.post("/admin/clients", data);
+        // straight to the new bot's page: that is where its generated embed code is shown
+        const created = await api.post("/admin/clients", data);
+        navigate(`/bots/${created.data.id}/edit`);
       } else {
         await api.put(`/admin/clients/${id}`, data);
+        navigate("/bots");
       }
-      navigate("/clients");
     } catch (err: unknown) {
       setError(errorDetail(err, "Failed to save the bot."));
       window.scrollTo({ top: 0, behavior: "smooth" });
@@ -47,7 +49,7 @@ export default function ClientEditPage() {
     }
   }
 
-  if (!isNew && !client) return <p style={{ color: "#64748b" }}>Loading…</p>;
+  if (!isNew && !client) return <p style={{ color: "var(--muted-fg)" }}>Loading…</p>;
 
   const snippet = client
     ? `<script src="${window.location.origin}/static/widget.js?client_id=${client.client_id}" defer></script>`
@@ -66,20 +68,20 @@ export default function ClientEditPage() {
   return (
     <div>
       <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 28 }}>
-        <Link to="/clients" style={{ color: "#64748b", textDecoration: "none", fontSize: 14 }}>← Bots</Link>
-        <h1 style={{ fontSize: 20, fontWeight: 700 }}>{isNew ? "New Bot" : `Edit — ${client?.name}`}</h1>
+        <Link to="/bots" style={{ color: "var(--muted-fg)", textDecoration: "none", fontSize: 14 }}>← Bots</Link>
+        <h1 style={{ fontSize: 20, fontWeight: 700 }}>{isNew ? "New Bot" : `Edit ${client?.name ?? "bot"}`}</h1>
       </div>
-      {error && <p style={{ color: "#dc2626", marginBottom: 16, fontSize: 13, whiteSpace: "pre-wrap" }}>{error}</p>}
+      {error && <p style={{ color: "var(--danger)", marginBottom: 16, fontSize: 13, whiteSpace: "pre-wrap" }}>{error}</p>}
 
       {!isNew && client && (
-        <div style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 12, padding: "16px 20px", marginBottom: 24, maxWidth: 560 }}>
+        <div style={{ background: "var(--surface-2)", border: "1px solid var(--border)", borderRadius: 12, padding: "16px 20px", marginBottom: 24, maxWidth: 560 }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
-            <span style={{ fontSize: 13, fontWeight: 700, color: "#334155" }}>Embed code</span>
+            <span style={{ fontSize: 13, fontWeight: 700, color: "var(--fg-2)" }}>Embed code</span>
             <button
               onClick={copySnippet}
               style={{
-                background: copied ? "#dcfce7" : "#2563eb",
-                color: copied ? "#16a34a" : "#fff",
+                background: copied ? "var(--success-soft)" : "var(--primary)",
+                color: copied ? "var(--success)" : "var(--on-primary)",
                 border: "none",
                 padding: "6px 14px",
                 borderRadius: 6,
@@ -89,14 +91,21 @@ export default function ClientEditPage() {
                 fontFamily: "inherit",
               }}
             >
-              {copied ? "✓ Copied" : "Copy"}
+              {copied ? "Copied" : "Copy"}
             </button>
           </div>
-          <code style={{ display: "block", background: "#fff", padding: "10px 12px", borderRadius: 6, fontSize: 12, color: "#1e293b", wordBreak: "break-all", border: "1px solid #e2e8f0" }}>
+          <code style={{ display: "block", background: "var(--surface)", padding: "10px 12px", borderRadius: 6, fontSize: 12, color: "var(--fg)", wordBreak: "break-all", border: "1px solid var(--border)" }}>
             {snippet}
           </code>
-          <div style={{ fontSize: 12, color: "#64748b", marginTop: 8 }}>
+          <div style={{ fontSize: 12, color: "var(--muted-fg)", marginTop: 8 }}>
             Paste this into the <code>&lt;head&gt;</code> or before <code>&lt;/body&gt;</code> on {client.domain}.
+          </div>
+          <div style={{ fontSize: 12, color: "var(--muted-fg)", marginTop: 6 }}>
+            Not ready to touch your site yet?{" "}
+            <a href={`/preview.html?client_id=${encodeURIComponent(client.client_id)}`} target="_blank" rel="noopener" style={{ color: "var(--primary)", fontWeight: 600 }}>
+              Preview the widget on a stand-in page
+            </a>
+            . Testing with your own HTML file: serve it from <code>http://localhost</code> (a file opened by double-click is refused by browsers' security rules).
           </div>
         </div>
       )}

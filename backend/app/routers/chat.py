@@ -10,7 +10,7 @@ from app.models.client import Client
 from app.schemas.chat import ChatRequest, ChatResponse
 from app.services import rate_limit
 from app.services.chat_service import prepare_turn, process_message, stream_events
-from app.services.client_service import enforce_widget_origin, require_active_client
+from app.services.client_service import enforce_widget_origin, is_platform_origin, require_active_client
 
 router = APIRouter()
 
@@ -21,9 +21,17 @@ def _admit(body: ChatRequest, request: Request, origin: Optional[str], db: Sessi
     rate_limit.enforce("chat-ip", rate_limit.client_ip(request), settings.RATE_CHAT_PER_IP_PER_MIN, 60)
     rate_limit.enforce("chat-session", f"{body.client_id}:{body.session_id}", settings.RATE_CHAT_PER_SESSION_PER_MIN, 60)
     rate_limit.enforce("chat-bot", body.client_id, settings.RATE_CHAT_PER_BOT_PER_MIN, 60)
+    # The public demo on the landing page: anyone may talk to this bot from our own pages, on its
+    # owner's budget. The bot's real website (a different origin) is not touched by this allowance.
+    demo_bot = settings.LANDING_DEMO_BOT.strip()
+    if demo_bot and body.client_id == demo_bot and is_platform_origin(origin, request):
+        rate_limit.enforce(
+            "demo-ip-day", rate_limit.client_ip(request), settings.RATE_LANDING_DEMO_PER_IP_PER_DAY, 86400,
+            "That is the demo's limit for today. Come back tomorrow, or set up a bot of your own.",
+        )
 
     client = require_active_client(body.client_id, db)
-    enforce_widget_origin(origin, client)
+    enforce_widget_origin(origin, client, request)
     return client
 
 

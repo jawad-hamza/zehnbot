@@ -41,14 +41,14 @@ export default function ConversationsPage() {
 
   const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const pagerBtn = (disabled: boolean): React.CSSProperties => ({
-    background: "#fff", border: "1px solid #cbd5e1", borderRadius: 6, padding: "4px 12px", fontSize: 12,
+    background: "var(--surface)", border: "1px solid var(--border-strong)", borderRadius: 6, padding: "4px 12px", fontSize: 12,
     cursor: disabled ? "default" : "pointer", opacity: disabled ? 0.45 : 1, fontFamily: "inherit",
   });
 
   return (
     <div>
       <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 20 }}>
-        <Link to="/clients" style={{ color: "#64748b", textDecoration: "none", fontSize: 14 }}>← Bots</Link>
+        <Link to="/bots" style={{ color: "var(--muted-fg)", textDecoration: "none", fontSize: 14 }}>← Bots</Link>
         <h1 style={{ fontSize: 20, fontWeight: 700 }}>Conversations ({total})</h1>
       </div>
 
@@ -59,35 +59,35 @@ export default function ConversationsPage() {
         placeholder="Search what visitors and the bot said…"
         aria-label="Search conversations"
         maxLength={200}
-        style={{ width: 320, padding: "9px 12px", border: "1px solid #cbd5e1", borderRadius: 8, fontSize: 13, outline: "none", marginBottom: 14, fontFamily: "inherit" }}
+        style={{ width: 320, padding: "9px 12px", border: "1px solid var(--border-strong)", borderRadius: 8, fontSize: 13, outline: "none", marginBottom: 14, fontFamily: "inherit" }}
       />
 
       <div style={{ display: "flex", gap: 24 }}>
         <div style={{ width: 320, flexShrink: 0, opacity: loading ? 0.5 : 1, transition: "opacity 0.15s" }}>
           {!loading && convs.length === 0 && (
-            <p style={{ color: "#64748b", fontSize: 13 }}>{query ? `No conversation mentions "${query}".` : "No conversations yet."}</p>
+            <p style={{ color: "var(--muted-fg)", fontSize: 13 }}>{query ? `No conversation mentions "${query}".` : "No conversations yet."}</p>
           )}
           {convs.map((c) => (
             <div
               key={c.id}
               onClick={() => openConversation(c.id)}
               style={{
-                background: selected === c.id ? "#eff6ff" : "#fff",
-                border: `1px solid ${selected === c.id ? "#93c5fd" : "#e2e8f0"}`,
+                background: selected === c.id ? "var(--primary-soft)" : "var(--surface)",
+                border: `1px solid ${selected === c.id ? "var(--primary-border)" : "var(--border)"}`,
                 borderRadius: 10,
                 padding: "12px 16px",
                 marginBottom: 8,
                 cursor: "pointer",
               }}
             >
-              <div style={{ fontSize: 13, fontWeight: 600, color: "#1e293b" }}>Session: {c.session_id.slice(0, 8)}…</div>
-              <div style={{ fontSize: 12, color: "#94a3b8", marginTop: 2 }}>
+              <div style={{ fontSize: 13, fontWeight: 600, color: "var(--fg)" }}>Session: {c.session_id.slice(0, 8)}…</div>
+              <div style={{ fontSize: 12, color: "var(--subtle-fg)", marginTop: 2 }}>
                 {c.message_count} messages · {new Date(c.last_message_at).toLocaleDateString()}
               </div>
             </div>
           ))}
           {pages > 1 && (
-            <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 6, fontSize: 12, color: "#64748b" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 6, fontSize: 12, color: "var(--muted-fg)" }}>
               <button type="button" disabled={page <= 1} onClick={() => setPage(page - 1)} style={pagerBtn(page <= 1)}>Newer</button>
               <span>Page {page} of {pages}</span>
               <button type="button" disabled={page >= pages} onClick={() => setPage(page + 1)} style={pagerBtn(page >= pages)}>Older</button>
@@ -96,12 +96,12 @@ export default function ConversationsPage() {
         </div>
 
         {selected && (
-          <div style={{ flex: 1, background: "#fff", border: "1px solid #e2e8f0", borderRadius: 12, padding: 20, maxHeight: 560, overflowY: "auto" }}>
+          <div style={{ flex: 1, background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, padding: 20, maxHeight: 560, overflowY: "auto" }}>
             {messages.map((m) => (
               <div key={m.id} style={{ marginBottom: 12, display: "flex", flexDirection: "column", alignItems: m.role === "user" ? "flex-end" : "flex-start" }}>
                 <div style={{
-                  background: m.role === "user" ? "#2563eb" : "#f1f5f9",
-                  color: m.role === "user" ? "#fff" : "#1e293b",
+                  background: m.role === "user" ? "var(--primary)" : "var(--surface-3)",
+                  color: m.role === "user" ? "var(--on-primary)" : "var(--fg)",
                   padding: "10px 14px",
                   borderRadius: 12,
                   maxWidth: "80%",
@@ -112,11 +112,11 @@ export default function ConversationsPage() {
                 }}>
                   {m.content}
                 </div>
-                <span style={{ fontSize: 11, color: "#94a3b8", marginTop: 2 }}>
+                <span style={{ fontSize: 11, color: "var(--subtle-fg)", marginTop: 2 }}>
                   {m.role} · {new Date(m.created_at).toLocaleTimeString()}
                   {m.unanswered && (
-                    <span style={{ marginLeft: 6, background: "#fef3c7", color: "#92400e", padding: "1px 7px", borderRadius: 999, fontWeight: 600 }}>
-                      ⚠ couldn't answer
+                    <span style={{ marginLeft: 6, background: "var(--warning-soft)", color: "var(--warning)", padding: "1px 7px", borderRadius: 999, fontWeight: 600 }}>
+                      couldn't answer
                     </span>
                   )}
                 </span>

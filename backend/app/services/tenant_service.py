@@ -1,3 +1,5 @@
+from datetime import datetime, timezone
+
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
@@ -20,8 +22,9 @@ def plan_defaults(plan: str) -> dict:
     return PLANS[plan]
 
 
-def create_tenant_with_owner(name: str, plan: str, owner_email: str, owner_password: str, db: Session) -> tuple[Tenant, User]:
-    """Creates the tenant and its first login in one transaction."""
+def create_tenant_with_owner(name: str, plan: str, owner_email: str, owner_password: str, db: Session, verified: bool = True) -> tuple[Tenant, User]:
+    """Creates the tenant and its first login in one transaction. `verified=False` is for self-service
+    sign-ups that still have to confirm their email address."""
     defaults = plan_defaults(plan)
     email = normalise_login(owner_email)
     if db.query(User.id).filter(User.email == email).first():
@@ -30,7 +33,8 @@ def create_tenant_with_owner(name: str, plan: str, owner_email: str, owner_passw
     tenant = Tenant(name=name.strip(), plan=plan, **defaults)
     db.add(tenant)
     db.flush()
-    user = User(email=email, hashed_password=hash_password(owner_password), role=ROLE_TENANT_ADMIN, tenant_id=tenant.id)
+    user = User(email=email, hashed_password=hash_password(owner_password), role=ROLE_TENANT_ADMIN, tenant_id=tenant.id,
+                email_verified_at=datetime.now(timezone.utc) if verified else None)
     db.add(user)
     db.commit()
     db.refresh(tenant)

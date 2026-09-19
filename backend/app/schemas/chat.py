@@ -47,3 +47,4 @@ class WidgetConfig(BaseModel):
     widget_position: str = "bottom-right"
     font_family: Optional[str] = None
     custom_css: Optional[str] = None
+    notification_sound: bool = True

@@ -48,43 +48,43 @@ export default function LeadsPage() {
   return (
     <div>
       <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 24 }}>
-        <Link to="/clients" style={{ color: "#64748b", textDecoration: "none", fontSize: 14 }}>← Bots</Link>
+        <Link to="/bots" style={{ color: "var(--muted-fg)", textDecoration: "none", fontSize: 14 }}>← Bots</Link>
         <h1 style={{ fontSize: 20, fontWeight: 700 }}>Leads ({total})</h1>
         {total > 0 && (
           <button
             type="button"
             onClick={exportCsv}
             disabled={exporting}
-            style={{ marginLeft: "auto", background: "#fff", border: "1px solid #cbd5e1", color: "#1e293b", borderRadius: 8, padding: "7px 16px", fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "inherit", opacity: exporting ? 0.6 : 1 }}
+            style={{ marginLeft: "auto", background: "var(--surface)", border: "1px solid var(--border-strong)", color: "var(--fg)", borderRadius: 8, padding: "7px 16px", fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "inherit", opacity: exporting ? 0.6 : 1 }}
           >
             {exporting ? "Preparing…" : "Export CSV"}
           </button>
         )}
       </div>
 
-      {error && <p style={{ color: "#dc2626", fontSize: 13, marginBottom: 12 }}>{error}</p>}
-      {loading && leads.length === 0 && <p style={{ color: "#64748b" }}>Loading…</p>}
-      {!loading && leads.length === 0 && <p style={{ color: "#64748b" }}>No leads captured yet.</p>}
+      {error && <p style={{ color: "var(--danger)", fontSize: 13, marginBottom: 12 }}>{error}</p>}
+      {loading && leads.length === 0 && <p style={{ color: "var(--muted-fg)" }}>Loading…</p>}
+      {!loading && leads.length === 0 && <p style={{ color: "var(--muted-fg)" }}>No leads captured yet.</p>}
 
       {leads.length > 0 && (
-        <table style={{ width: "100%", borderCollapse: "collapse", background: "#fff", borderRadius: 12, overflow: "hidden", border: "1px solid #e2e8f0", opacity: loading ? 0.5 : 1 }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", background: "var(--surface)", borderRadius: 12, overflow: "hidden", border: "1px solid var(--border)", opacity: loading ? 0.5 : 1 }}>
           <thead>
-            <tr style={{ background: "#f8fafc", textAlign: "left" }}>
+            <tr style={{ background: "var(--surface-2)", textAlign: "left" }}>
               {["Name", "Email", "Phone", "Via", "Captured At"].map((h) => (
-                <th key={h} style={{ padding: "10px 16px", fontSize: 12, fontWeight: 700, color: "#475569", textTransform: "uppercase", letterSpacing: "0.05em" }}>{h}</th>
+                <th key={h} style={{ padding: "10px 16px", fontSize: 12, fontWeight: 700, color: "var(--fg-2)", textTransform: "uppercase", letterSpacing: "0.05em" }}>{h}</th>
               ))}
             </tr>
           </thead>
           <tbody>
             {leads.map((l) => (
-              <tr key={l.id} style={{ borderTop: "1px solid #f1f5f9" }}>
-                <td style={{ padding: "12px 16px", fontSize: 14 }}>{l.name || "—"}</td>
-                <td style={{ padding: "12px 16px", fontSize: 14 }}>{l.email ? <a href={`mailto:${l.email}`} style={{ color: "#1d4ed8", textDecoration: "none" }}>{l.email}</a> : "—"}</td>
-                <td style={{ padding: "12px 16px", fontSize: 14 }}>{l.phone || "—"}</td>
-                <td style={{ padding: "12px 16px", fontSize: 12, color: "#64748b" }} title={l.source === "chat" ? "The visitor typed their details into the conversation" : "The visitor filled in the widget's contact form"}>
+              <tr key={l.id} style={{ borderTop: "1px solid var(--surface-3)" }}>
+                <td style={{ padding: "12px 16px", fontSize: 14 }}>{l.name || "-"}</td>
+                <td style={{ padding: "12px 16px", fontSize: 14 }}>{l.email ? <a href={`mailto:${l.email}`} style={{ color: "var(--primary-text)", textDecoration: "none" }}>{l.email}</a> : "-"}</td>
+                <td style={{ padding: "12px 16px", fontSize: 14 }}>{l.phone || "-"}</td>
+                <td style={{ padding: "12px 16px", fontSize: 12, color: "var(--muted-fg)" }} title={l.source === "chat" ? "The visitor typed their details into the conversation" : "The visitor filled in the widget's contact form"}>
                   {l.source === "chat" ? "Typed in chat" : "Contact form"}
                 </td>
-                <td style={{ padding: "12px 16px", fontSize: 13, color: "#64748b" }}>{new Date(l.captured_at).toLocaleString()}</td>
+                <td style={{ padding: "12px 16px", fontSize: 13, color: "var(--muted-fg)" }}>{new Date(l.captured_at).toLocaleString()}</td>
               </tr>
             ))}
           </tbody>
@@ -92,10 +92,10 @@ export default function LeadsPage() {
       )}
 
       {pages > 1 && (
-        <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 12, fontSize: 12, color: "#64748b" }}>
-          <button type="button" disabled={page <= 1} onClick={() => setPage(page - 1)} style={{ background: "#fff", border: "1px solid #cbd5e1", borderRadius: 6, padding: "4px 12px", fontSize: 12, fontFamily: "inherit" }}>Newer</button>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 12, fontSize: 12, color: "var(--muted-fg)" }}>
+          <button type="button" disabled={page <= 1} onClick={() => setPage(page - 1)} style={{ background: "var(--surface)", border: "1px solid var(--border-strong)", borderRadius: 6, padding: "4px 12px", fontSize: 12, fontFamily: "inherit" }}>Newer</button>
           <span>Page {page} of {pages}</span>
-          <button type="button" disabled={page >= pages} onClick={() => setPage(page + 1)} style={{ background: "#fff", border: "1px solid #cbd5e1", borderRadius: 6, padding: "4px 12px", fontSize: 12, fontFamily: "inherit" }}>Older</button>
+          <button type="button" disabled={page >= pages} onClick={() => setPage(page + 1)} style={{ background: "var(--surface)", border: "1px solid var(--border-strong)", borderRadius: 6, padding: "4px 12px", fontSize: 12, fontFamily: "inherit" }}>Older</button>
         </div>
       )}
     </div>

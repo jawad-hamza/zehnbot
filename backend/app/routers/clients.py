@@ -1,3 +1,5 @@
+import re
+import secrets
 import uuid
 from typing import List, Optional
 
@@ -13,10 +15,12 @@ from app.models.user import User
 from app.schemas.chat import ChatResponse, OwnerChatRequest
 from app.schemas.client import ClientCreate, ClientUpdate, ClientResponse, ClientListItem
 from app.services import rate_limit
-from app.services.chat_service import process_message
+from app.services.ai_service import chat_completion
+from app.services.chat_service import process_message, resolve_ai_credentials
 from app.services.crypto_service import encrypt_secret
 from app.services.net_guard import UnsafeURLError, assert_public_url
 from app.services.providers import CUSTOM, PROVIDERS, get_provider
+from app.services.style_service import StyleGuess, detect_site_style
 from app.services.tenant_service import enforce_bot_limit
 
 router = APIRouter()
@@ -45,6 +49,17 @@ def list_providers(_: User = Depends(get_current_user)):
     ]
 
 
+def _new_client_id(name: str, db: Session) -> str:
+    """The public id used in the embed snippet: readable, and not guessable from the company name
+    alone ("zehnox-4f9c2a"), so bots cannot be enumerated by trying obvious slugs."""
+    slug = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")[:40].strip("-") or "bot"
+    for _ in range(10):
+        candidate = f"{slug}-{secrets.token_hex(3)}"
+        if not db.query(Client.id).filter(Client.client_id == candidate).first():
+            return candidate
+    return f"{slug}-{secrets.token_hex(8)}"
+
+
 def _check_ai_settings(client: Client) -> None:
     """Runs before every save. Rejects combinations that could never produce a reply, so the owner
     finds out in the form rather than from a broken widget."""
@@ -60,7 +75,9 @@ def _check_ai_settings(client: Client) -> None:
         if not settings.ALLOW_CUSTOM_AI_ENDPOINTS:
             raise HTTPException(status_code=400, detail="Custom AI endpoints are not enabled on this platform.")
         if not client.ai_base_url:
-            raise HTTPException(status_code=400, detail="Enter the base URL of your OpenAI-compatible endpoint, e.g. https://llm.example.com/v1")
+            raise HTTPException(status_code=400, detail="Enter the base URL of your OpenAI-compatible endpoint, e.g. llm.example.com/v1")
+        if "://" not in client.ai_base_url:
+            client.ai_base_url = "https://" + client.ai_base_url   # "llm.example.com/v1" is enough
         if not client.ai_base_url.lower().startswith("https://"):
             raise HTTPException(status_code=400, detail="The endpoint must use https:// (your API key is sent to it).")
         try:
@@ -106,18 +123,67 @@ def create_client(body: ClientCreate, db: Session = Depends(get_db), user: User 
         tenant = user.tenant   # a tenant user can never create a bot anywhere else
         enforce_bot_limit(tenant, db)
 
-    if db.query(Client.id).filter(Client.client_id == body.client_id).first():
-        raise HTTPException(status_code=409, detail="client_id already exists")
+    if body.client_id:
+        if db.query(Client.id).filter(Client.client_id == body.client_id).first():
+            raise HTTPException(status_code=409, detail="client_id already exists")
+        public_id = body.client_id
+    else:
+        public_id = _new_client_id(body.name, db)
 
-    data = body.model_dump(exclude={"tenant_id", "ai_api_key"})
-    client = Client(**data, tenant_id=tenant.id)
+    data = body.model_dump(exclude={"tenant_id", "ai_api_key", "client_id", "match_website"})
+    client = Client(**data, client_id=public_id, tenant_id=tenant.id)
     if body.ai_api_key and body.ai_api_key.strip():
         client.ai_api_key = encrypt_secret(body.ai_api_key.strip())
     _check_ai_settings(client)
+    if body.match_website:
+        rate_limit.enforce("style-match", str(user.id), settings.RATE_STYLE_MATCH_PER_USER_PER_HOUR, 3600)
+        _apply_style(client, _match_style(client))   # best effort: a site that cannot be read keeps the defaults
     db.add(client)
     db.commit()
     db.refresh(client)
     return ClientResponse.from_model(client)
+
+
+def _match_style(client: Client) -> StyleGuess:
+    """Looks at the bot's website and proposes a colour and font. The AI is optional help, never required."""
+    complete = None
+    try:
+        endpoint, api_key, _ = resolve_ai_credentials(client)
+        complete = lambda messages: chat_completion(messages, endpoint, api_key)[0]   # noqa: E731
+    except HTTPException:
+        pass
+    return detect_site_style(client.domain, complete)
+
+
+def _apply_style(client: Client, guess: StyleGuess) -> None:
+    if guess.theme_color:
+        client.theme_color = guess.theme_color
+    if guess.font_family:
+        client.font_family = guess.font_family[:200]
+
+
+class StyleMatchResponse(BaseModel):
+    applied: bool
+    method: str                  # "ai" | "css" | "none"
+    detail: str
+    theme_color: str
+    font_family: Optional[str]
+    colors_found: List[str]
+    fonts_found: List[str]
+
+
+@router.post("/clients/{client_uuid}/match-style", response_model=StyleMatchResponse)
+def match_style(client: Client = Depends(get_owned_client), db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """Re-reads the bot's website and restyles the widget to match it."""
+    rate_limit.enforce("style-match", str(user.id), settings.RATE_STYLE_MATCH_PER_USER_PER_HOUR, 3600)
+    guess = _match_style(client)
+    _apply_style(client, guess)
+    db.commit()
+    db.refresh(client)
+    return StyleMatchResponse(
+        applied=bool(guess.theme_color or guess.font_family), method=guess.method, detail=guess.detail,
+        theme_color=client.theme_color, font_family=client.font_family, colors_found=guess.colors, fonts_found=guess.fonts,
+    )
 
 
 @router.get("/clients/{client_uuid}", response_model=ClientResponse)

@@ -11,6 +11,8 @@ export interface Client {
   widget_position: string;
   font_family: string | null;
   custom_css: string | null;
+  /** Soft chirp in the widget when the bot replies (visitors can mute it themselves). */
+  notification_sound: boolean;
   ai_provider: string;
   ai_model: string | null;
   /** Only for the "custom" provider: any OpenAI-compatible endpoint. */
@@ -26,6 +28,8 @@ export interface Client {
 /** What the bot form submits. `ai_api_key`: undefined = keep, "" = remove, text = replace. */
 export type ClientPayload = Partial<Omit<Client, "ai_api_key_set" | "ai_api_key_hint">> & {
   ai_api_key?: string;
+  /** New bots only: read the website and take its brand colour and font for the widget. */
+  match_website?: boolean;
 };
 
 /** One entry of the backend's provider catalogue (GET /admin/providers). */
@@ -66,6 +70,8 @@ export interface Me {
   email: string;
   role: "superadmin" | "tenant_admin";
   tenant: TenantSummary | null;
+  has_password: boolean;
+  google_linked: boolean;
 }
 
 export interface TenantUser {

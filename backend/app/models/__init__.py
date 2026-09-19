@@ -5,3 +5,5 @@ from app.models.knowledge import KnowledgeChunk
 from app.models.conversation import Conversation, Message
 from app.models.lead import Lead
 from app.models.job import IngestJob
+from app.models.enquiry import Enquiry
+from app.models.setting import PlatformSetting

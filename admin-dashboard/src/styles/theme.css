@@ -1,0 +1,351 @@
+/* ZehnBot design tokens and shared components.
+
+   Colour comes from the Zehnox brand sheet ("Zehnox branding.pdf", read as vectors, not eyeballed):
+     navy #021b8c   blue #1a52d7   grey #767887   paper #f2f4f5   ink #13101f   lime #cefd21
+     (secondary, unused in the UI so far: purple #8a2de2, orange #ed4c00, cyan #16e9d8)
+   Light theme: paper ground, ink text, NAVY as the working colour (buttons, links, focus).
+   Dark theme: ink ground, paper text, LIME as the working colour, with ink text on it.
+   Lime is never text on a light ground (1.2:1); it only ever appears as a fill with ink on top.
+   Every text/background pair below was computed to clear WCAG AA 4.5:1; chart colours went
+   through the data-viz validator (brand blue in light, the same blue lifted for the ink ground).
+
+   Shape rule, applied everywhere: controls 10px, cards 16px, pills only for badges/segments.
+   Components never use raw hex. They use these roles, which is what lets light and dark be
+   two sets of values instead of two stylesheets. */
+
+:root,
+:root[data-theme="light"] {
+  color-scheme: light;
+  --bg: #f2f4f5;
+  --surface: #fbfcfd;
+  --surface-2: #e9ecf0;
+  --surface-3: #dfe3e9;
+  --fg: #13101f;
+  --fg-2: #2f2d40;
+  --muted-fg: #4f5164;
+  --subtle-fg: #5f6175;
+  --border: #dde1e7;
+  --border-strong: #b9bfca;
+  --primary: #021b8c;
+  --primary-hover: #1a52d7;
+  --primary-text: #021b8c;
+  --primary-soft: #e3e8fa;
+  --primary-border: #b4c1ef;
+  --on-primary: #f2f4f5;
+  --accent: #021b8c;          /* aliases that keep older call sites working */
+  --accent-text: #021b8c;
+  --accent-soft: #e3e8fa;
+  /* the brand block (closing band, sign-in side panel): navy with a lime action */
+  --band-bg: #021b8c;
+  --band-fg: #f2f4f5;
+  --band-action-bg: #cefd21;
+  --band-action-fg: #13101f;
+  --success: #14624b;
+  --success-soft: #e3f1ec;
+  --warning: #8a5a00;
+  --warning-soft: #fdf3d8;
+  --danger: #b42318;
+  --danger-soft: #fdecea;
+  --danger-border: #f3b8b1;
+  --ring: #1a52d7;
+  --series: #1a52d7;
+  --series-hover: #021b8c;
+  --grid: #dfe3e9;
+  --tooltip-bg: #13101f;
+  --tooltip-fg: #f2f4f5;
+  --shadow-sm: 0 1px 2px rgba(19, 16, 31, 0.06);
+  --shadow-md: 0 10px 28px -8px rgba(19, 16, 31, 0.16);
+  --shadow-lg: 0 32px 64px -24px rgba(19, 16, 31, 0.3);
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #13101f;
+  --surface: #1b1829;
+  --surface-2: #231f33;
+  --surface-3: #2e2a41;
+  --fg: #f2f4f5;
+  --fg-2: #d5d7e0;
+  --muted-fg: #a9abbb;
+  --subtle-fg: #9496a9;
+  --border: #2b2740;
+  --border-strong: #464160;
+  --primary: #cefd21;         /* a bright fill with ink on it: white text would be unreadable here */
+  --primary-hover: #dcff5c;
+  --primary-text: #cefd21;
+  --primary-soft: #262d14;
+  --primary-border: #56681c;
+  --on-primary: #13101f;
+  --accent: #cefd21;
+  --accent-text: #cefd21;
+  --accent-soft: #262d14;
+  /* the brand block is the same in both themes: navy, with the lime action (half a screen of lime is too loud) */
+  --band-bg: #021b8c;
+  --band-fg: #f2f4f5;
+  --band-action-bg: #cefd21;
+  --band-action-fg: #13101f;
+  --success: #5fd9ab;
+  --success-soft: #10291f;
+  --warning: #f5c451;
+  --warning-soft: #33270a;
+  --danger: #f97066;
+  --danger-soft: #3a1512;
+  --danger-border: #7a2a23;
+  --ring: #cefd21;
+  --series: #5b86f0;
+  --series-hover: #86a6f5;
+  --grid: #2b2740;
+  --tooltip-bg: #f2f4f5;
+  --tooltip-fg: #13101f;
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.5);
+  --shadow-md: 0 10px 28px -8px rgba(0, 0, 0, 0.6);
+  --shadow-lg: 0 32px 64px -24px rgba(0, 0, 0, 0.8);
+}
+
+:root {
+  --font-body: "Geist Variable", "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-head: var(--font-body);
+  --font-mono: "Geist Mono Variable", "Geist Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --radius-sm: 10px;
+  --radius: 16px;
+  --radius-lg: 16px;
+  --sidebar: 248px;
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { -webkit-text-size-adjust: 100%; scroll-behavior: smooth; }
+body {
+  font-family: var(--font-body);
+  font-size: 15px;
+  line-height: 1.55;
+  background: var(--bg);
+  color: var(--fg);
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+h1, h2, h3, h4 { font-weight: 600; letter-spacing: -0.025em; line-height: 1.15; color: var(--fg); text-wrap: balance; }
+a { color: var(--primary-text); text-underline-offset: 0.18em; text-decoration-thickness: 0.06em; }
+::selection { background: color-mix(in srgb, var(--primary) 28%, transparent); color: var(--fg); }
+input, textarea { caret-color: var(--primary); }
+* { scrollbar-color: var(--border-strong) transparent; scrollbar-width: thin; }
+button, a, select, summary, [role="button"], label:has(input[type="checkbox"]) { cursor: pointer; }
+button:disabled { cursor: not-allowed; }
+input, select, textarea, button { font-family: inherit; color: inherit; }
+input, select, textarea { background: var(--surface); }
+input::placeholder, textarea::placeholder { color: var(--subtle-fg); opacity: 1; }
+code { font-family: var(--font-mono); font-size: 0.92em; background: var(--surface-3); padding: 1px 6px; border-radius: 4px; }
+
+/* Several older pages set `outline: none` inline. Keyboard users still need to see where they
+   are, so the focus ring is restored here for everything interactive. */
+:is(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
+  outline: 2px solid var(--ring) !important;
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
+}
+
+.zb-sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+
+/* ---------- buttons ---------- */
+.zb-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  min-height: 40px; padding: 0 16px;
+  border-radius: var(--radius-sm); border: 1px solid transparent;
+  font-size: 14px; font-weight: 600; text-decoration: none; white-space: nowrap;
+  transition: background-color 0.18s ease, border-color 0.18s ease, color 0.18s ease, transform 0.12s ease, box-shadow 0.18s ease;
+}
+.zb-btn:active:not(:disabled) { transform: translateY(1px); }
+.zb-btn:disabled { opacity: 0.55; }
+.zb-btn--primary { background: var(--primary); color: var(--on-primary); }
+.zb-btn--primary:hover:not(:disabled) { background: var(--primary-hover); }
+.zb-btn--secondary { background: var(--surface); color: var(--fg); border-color: var(--border-strong); }
+.zb-btn--secondary:hover:not(:disabled) { background: var(--surface-2); border-color: var(--primary-border); }
+.zb-btn--ghost { background: transparent; color: var(--fg-2); }
+.zb-btn--ghost:hover:not(:disabled) { background: var(--surface-3); }
+.zb-btn--lg { min-height: 48px; padding: 0 22px; font-size: 15px; }
+.zb-btn--sm { min-height: 32px; padding: 0 12px; font-size: 13px; }
+.zb-btn--block { width: 100%; }
+.zb-icon-btn {
+  display: inline-flex; align-items: center; justify-content: center; width: 40px; height: 40px;
+  border-radius: var(--radius-sm); border: 1px solid var(--border); background: var(--surface); color: var(--fg-2);
+  transition: background-color 0.18s ease, border-color 0.18s ease;
+}
+.zb-icon-btn:hover { background: var(--surface-2); border-color: var(--primary-border); }
+
+/* ---------- surfaces ---------- */
+.zb-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow-sm); }
+.zb-card--pad { padding: 20px 22px; }
+.zb-badge { display: inline-flex; align-items: center; gap: 6px; padding: 2px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; line-height: 1.6; }
+.zb-badge--primary { background: var(--primary-soft); color: var(--primary-text); }
+.zb-badge--accent { background: var(--accent-soft); color: var(--accent-text); }
+.zb-badge--success { background: var(--success-soft); color: var(--success); }
+.zb-badge--warning { background: var(--warning-soft); color: var(--warning); }
+.zb-badge--danger { background: var(--danger-soft); color: var(--danger); }
+.zb-badge--neutral { background: var(--surface-3); color: var(--fg-2); }
+.zb-dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; flex-shrink: 0; }
+
+/* ---------- forms ---------- */
+.zb-field { display: flex; flex-direction: column; gap: 6px; }
+.zb-label { font-size: 13px; font-weight: 600; color: var(--fg-2); }
+.zb-input {
+  width: 100%; min-height: 44px; padding: 0 14px;
+  border: 1px solid var(--border-strong); border-radius: var(--radius-sm);
+  background: var(--surface); color: var(--fg); font-size: 15px;
+  transition: border-color 0.18s ease, box-shadow 0.18s ease;
+}
+.zb-input:hover { border-color: var(--primary-border); }
+.zb-input:focus { border-color: var(--primary); box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 22%, transparent); outline: none; }
+.zb-input[aria-invalid="true"] { border-color: var(--danger); }
+.zb-help { font-size: 12.5px; color: var(--subtle-fg); }
+.zb-error { font-size: 13px; color: var(--danger); display: flex; gap: 6px; align-items: flex-start; }
+.zb-alert { border-radius: var(--radius-sm); padding: 10px 14px; font-size: 13.5px; border: 1px solid; white-space: pre-wrap; }
+.zb-alert--danger { background: var(--danger-soft); border-color: var(--danger-border); color: var(--danger); }
+.zb-alert--info { background: var(--primary-soft); border-color: var(--primary-border); color: var(--primary-text); }
+
+/* ---------- tables ---------- */
+.zb-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+.zb-table th { text-align: left; font-size: 12px; font-weight: 600; color: var(--subtle-fg); padding: 10px 14px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+.zb-table td { padding: 12px 14px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+.zb-table tr:last-child td { border-bottom: none; }
+.zb-table tbody tr { transition: background-color 0.15s ease; }
+.zb-table tbody tr:hover { background: var(--surface-2); }
+.zb-num { font-variant-numeric: tabular-nums; text-align: right; }
+.zb-table-wrap { overflow-x: auto; }
+
+/* ---------- app shell ---------- */
+.zb-shell { display: flex; min-height: 100vh; }
+.zb-sidebar {
+  width: var(--sidebar); flex-shrink: 0; position: sticky; top: 0; height: 100vh;
+  display: flex; flex-direction: column; padding: 18px 14px;
+  background: var(--surface); border-right: 1px solid var(--border);
+}
+.zb-brand { display: flex; align-items: center; gap: 10px; padding: 6px 10px 18px; font-weight: 600; font-size: 17px; letter-spacing: -0.02em; color: var(--fg); text-decoration: none; }
+.zb-brand-mark { width: 32px; height: 32px; border-radius: 10px; display: block; flex-shrink: 0; object-fit: contain; padding: 2px; background: #13101f; box-shadow: 0 0 0 1px var(--border); }
+.zb-nav-section { font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--subtle-fg); padding: 14px 12px 6px; }
+.zb-nav-link {
+  display: flex; align-items: center; gap: 11px; min-height: 40px; padding: 0 12px; margin-bottom: 2px;
+  border-radius: var(--radius-sm); color: var(--muted-fg); text-decoration: none; font-size: 14px; font-weight: 500;
+  transition: background-color 0.16s ease, color 0.16s ease;
+}
+.zb-nav-link:hover { background: var(--surface-2); color: var(--fg); }
+.zb-nav-link.active { background: var(--primary-soft); color: var(--primary-text); font-weight: 600; }
+.zb-sidebar-foot { margin-top: auto; display: flex; flex-direction: column; gap: 12px; }
+.zb-usage { border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 14px; font-size: 12.5px; color: var(--muted-fg); background: var(--surface-2); }
+.zb-meter { height: 6px; border-radius: 3px; background: var(--surface-3); overflow: hidden; margin-top: 8px; }
+.zb-meter > span { display: block; height: 100%; border-radius: 3px; background: var(--primary); }
+.zb-meter--warn > span { background: var(--warning); }
+.zb-meter--danger > span { background: var(--danger); }
+.zb-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.zb-topbar {
+  position: sticky; top: 0; z-index: 20; display: flex; align-items: center; gap: 12px; min-height: 64px; padding: 0 28px;
+  background: color-mix(in srgb, var(--bg) 86%, transparent); backdrop-filter: blur(10px); border-bottom: 1px solid var(--border);
+}
+.zb-topbar-title { font-weight: 600; font-size: 15px; color: var(--muted-fg); }
+.zb-topbar-spacer { flex: 1; }
+.zb-user { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--muted-fg); }
+.zb-avatar { width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; font-weight: 700; font-size: 13px; color: var(--primary-text); background: var(--primary-soft); border: 1px solid var(--primary-border); }
+.zb-content { padding: 28px; width: 100%; max-width: 1200px; margin: 0 auto; }
+.zb-page-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 22px; }
+.zb-page-head h1 { font-size: 26px; }
+.zb-page-head p { color: var(--muted-fg); margin-top: 4px; font-size: 14px; }
+.zb-menu-btn { display: none; }
+.zb-scrim { display: none; }
+
+@media (max-width: 900px) {
+  .zb-sidebar { position: fixed; z-index: 40; left: 0; transform: translateX(-102%); transition: transform 0.24s ease; box-shadow: var(--shadow-lg); }
+  .zb-sidebar.open { transform: none; }
+  .zb-scrim.open { display: block; position: fixed; inset: 0; z-index: 30; background: rgba(8, 6, 24, 0.55); border: none; width: 100%; }
+  .zb-menu-btn { display: inline-flex; }
+  .zb-topbar { padding: 0 16px; }
+  .zb-content { padding: 18px 16px 40px; }
+  .zb-user span { display: none; }
+}
+
+/* ---------- dashboard pieces ---------- */
+.zb-grid { display: grid; gap: 14px; }
+.zb-grid > * { min-width: 0; }   /* a wide table scrolls inside its card instead of widening the page */
+.zb-grid--stats { grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); }
+.zb-grid--2 { grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); }
+.zb-grid--main { grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); align-items: start; }
+@media (max-width: 1000px) { .zb-grid--main { grid-template-columns: minmax(0, 1fr); } }
+.zb-stat-label { font-size: 13px; color: var(--muted-fg); display: flex; align-items: center; gap: 8px; }
+.zb-stat-icon { width: 30px; height: 30px; border-radius: 9px; display: grid; place-items: center; background: var(--primary-soft); color: var(--primary-text); flex-shrink: 0; }
+.zb-stat-value { font-size: 30px; font-weight: 600; letter-spacing: -0.03em; line-height: 1.15; margin: 10px 0 2px; color: var(--fg); }
+.zb-stat-note { font-size: 12.5px; color: var(--subtle-fg); }
+.zb-card-title { font-size: 15px; font-weight: 600; }
+.zb-card-sub { font-size: 12.5px; color: var(--subtle-fg); margin-top: 2px; }
+.zb-list { list-style: none; display: flex; flex-direction: column; }
+.zb-list > li { display: flex; align-items: center; gap: 12px; padding: 11px 0; border-bottom: 1px solid var(--border); font-size: 14px; }
+.zb-list > li:last-child { border-bottom: none; }
+.zb-empty { color: var(--subtle-fg); font-size: 14px; padding: 18px 0; text-align: center; }
+.zb-seg { display: inline-flex; padding: 3px; border-radius: 10px; background: var(--surface-3); gap: 2px; }
+.zb-seg button { min-height: 32px; padding: 0 12px; border: none; border-radius: 8px; background: transparent; color: var(--muted-fg); font-size: 13px; font-weight: 600; transition: background-color 0.16s ease, color 0.16s ease; }
+.zb-seg button[aria-pressed="true"] { background: var(--surface); color: var(--fg); box-shadow: var(--shadow-sm); }
+.zb-check { display: flex; gap: 12px; align-items: flex-start; padding: 12px 0; border-bottom: 1px solid var(--border); }
+.zb-check:last-child { border-bottom: none; }
+.zb-check-mark { width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; flex-shrink: 0; margin-top: 1px; border: 1.5px solid var(--border-strong); color: transparent; }
+.zb-check.done .zb-check-mark { background: var(--success); border-color: var(--success); color: var(--surface); }
+.zb-check.done .zb-check-text strong { color: var(--subtle-fg); text-decoration: line-through; }
+.zb-check-text strong { display: block; font-size: 14px; font-weight: 600; color: var(--fg); }
+.zb-check-text span { font-size: 13px; color: var(--muted-fg); }
+.zb-status-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--border); font-size: 14px; }
+.zb-status-row:last-child { border-bottom: none; }
+.zb-status-row span:first-child, .zb-status-row dt { color: var(--muted-fg); }
+.zb-status-row dd { margin: 0; font-weight: 500; }
+.zb-skeleton { border-radius: var(--radius); background: linear-gradient(90deg, var(--surface-2), var(--surface-3), var(--surface-2)); background-size: 200% 100%; animation: zb-shimmer 1.4s ease infinite; }
+@keyframes zb-shimmer { to { background-position: -200% 0; } }
+
+/* ---------- auth pages ---------- */
+.zb-auth { min-height: 100vh; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr); }
+.zb-auth-side { position: relative; overflow: hidden; padding: 48px; display: flex; flex-direction: column; justify-content: space-between; color: var(--band-fg); background: var(--band-bg); }
+.zb-auth-side h2 { color: inherit; font-size: 32px; max-width: 420px; }
+.zb-auth-side p { color: inherit; opacity: 0.86; max-width: 420px; margin-top: 12px; }
+.zb-auth-points { list-style: none; display: flex; flex-direction: column; gap: 12px; margin-top: 28px; font-size: 14.5px; }
+.zb-auth-points li { display: flex; gap: 10px; align-items: flex-start; color: inherit; }
+.zb-auth-main { display: flex; flex-direction: column; padding: 24px; }
+.zb-auth-top { display: flex; justify-content: space-between; align-items: center; }
+.zb-auth-form { width: 100%; max-width: 400px; margin: auto; padding: 32px 0; display: flex; flex-direction: column; gap: 18px; }
+.zb-auth-form h1 { font-size: 28px; }
+.zb-password { position: relative; }
+.zb-password .zb-input { padding-right: 48px; }
+.zb-password button { position: absolute; right: 4px; top: 50%; transform: translateY(-50%); width: 40px; height: 36px; border: none; border-radius: 6px; background: transparent; color: var(--subtle-fg); display: grid; place-items: center; }
+.zb-password button:hover { color: var(--fg); background: var(--surface-3); }
+.zb-strength { height: 4px; border-radius: 2px; background: var(--surface-3); overflow: hidden; }
+.zb-strength > span { display: block; height: 100%; transition: background-color 0.25s ease; }
+@media (max-width: 860px) { .zb-auth { grid-template-columns: 1fr; } .zb-auth-side { display: none; } }
+
+/* ---- "by Zehnox": the parent brand's wordmark, drawn from the brand sheet's own outlines ---- */
+.zb-zehnox { display: inline-flex; align-items: center; gap: 8px; color: inherit; text-decoration: none; font-size: 13px; }
+.zb-zehnox svg { display: block; height: 12px; width: auto; }
+.zb-zehnox:hover { opacity: 0.8; }
+
+/* a button that reads as a link, for actions that open something instead of going somewhere */
+.zb-link { background: none; border: none; padding: 0; font: inherit; color: var(--primary-text); text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
+.zb-link:hover { color: var(--primary-hover); }
+
+/* ---- dialog (native <dialog>: focus trap, Esc and the backdrop come from the browser) ---- */
+.zb-dialog { border: 1px solid var(--border); border-radius: var(--radius); padding: 0; width: min(520px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); background: var(--surface); color: var(--fg); box-shadow: var(--shadow-lg); margin: auto; }
+.zb-dialog::backdrop { background: rgba(19, 16, 31, 0.6); }
+.zb-dialog[open] { animation: zb-dialog-in 0.22s var(--ease-out); }
+@keyframes zb-dialog-in { from { opacity: 0; transform: translateY(10px) scale(0.98); } }
+.zb-dialog-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 24px 24px 0; }
+/* two classes: the landing page's own `.lp h2` display size must not reach into a dialog opened from it */
+.zb-dialog .zb-dialog-head h2 { font-size: 22px; line-height: 1.2; letter-spacing: -0.03em; max-width: none; }
+.zb-dialog .zb-dialog-head p { color: var(--muted-fg); font-size: 14px; line-height: 1.5; margin-top: 6px; max-width: none; }
+.zb-dialog-body { padding: 20px 24px 24px; display: flex; flex-direction: column; gap: 14px; overflow-y: auto; }
+.zb-dialog-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.zb-dialog-done { padding: 8px 0 4px; display: flex; flex-direction: column; gap: 10px; align-items: flex-start; }
+.zb-dialog-done .zb-stat-icon { width: 44px; height: 44px; border-radius: 14px; }
+textarea.zb-input { min-height: 88px; padding-top: 10px; padding-bottom: 10px; resize: vertical; line-height: 1.5; }
+@media (max-width: 520px) { .zb-dialog-row { grid-template-columns: 1fr; } }
+
+/* ---- sign in with Google, and the "or" rule under it ---- */
+.zb-btn--google { background: var(--surface); color: var(--fg); border: 1px solid var(--border-strong); }
+.zb-btn--google:hover { background: var(--surface-2); }
+.zb-or { display: flex; align-items: center; gap: 12px; color: var(--subtle-fg); font-size: 12.5px; }
+.zb-or::before, .zb-or::after { content: ""; flex: 1; height: 1px; background: var(--border); }
+.zb-inbox { display: flex; flex-direction: column; gap: 14px; align-items: flex-start; }
+.zb-inbox .zb-stat-icon { width: 48px; height: 48px; border-radius: 14px; }

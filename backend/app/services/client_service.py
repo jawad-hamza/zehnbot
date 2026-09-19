@@ -40,15 +40,36 @@ def allowed_hosts(client: Client) -> List[str]:
     return [h for h in (_host_of(part) for part in re.split(r"[,\s]+", client.domain or "")) if h]
 
 
-def origin_allowed(origin: Optional[str], client: Client) -> bool:
+_LOOPBACK_HOSTS = {"localhost", "127.0.0.1", "::1"}
+
+
+def origin_allowed(origin: Optional[str], client: Client, platform_host: Optional[str] = None) -> bool:
+    # "null" is what file:// pages send, but also what any website can produce with a sandboxed
+    # iframe, so it can never be let through.
     if not origin or origin == "null":
         return False
     host = _host_of(origin)
+    # The platform's own pages: the dashboard's "Preview" opens a page on this very host with the
+    # real widget in it. Only a page served by us can carry our host as its origin.
+    if platform_host and host == _host_of(platform_host):
+        return True
+    # A page on the owner's own computer, while they build their site. Nobody can put this origin
+    # in front of other people's visitors, so it opens nothing the rate limits do not already cover.
+    if settings.ALLOW_LOCALHOST_WIDGET and host in _LOOPBACK_HOSTS:
+        return True
     return any(host == allowed or host.endswith("." + allowed) for allowed in allowed_hosts(client))
 
 
-def enforce_widget_origin(origin: Optional[str], client: Client) -> None:
+def is_platform_origin(origin: Optional[str], request) -> bool:
+    """True when the calling page is one of our own (landing page, preview), not a customer's website."""
+    if not origin or origin == "null" or request is None or not request.url.hostname:
+        return False
+    return _host_of(origin) == _host_of(request.url.hostname)
+
+
+def enforce_widget_origin(origin: Optional[str], client: Client, request=None) -> None:
     """Stops other websites from embedding a tenant's bot and spending its quota.
     Browsers cannot forge Origin; scripted abuse is handled by the rate limits instead."""
-    if settings.ENFORCE_WIDGET_ORIGIN and not origin_allowed(origin, client):
+    platform_host = request.url.hostname if request is not None else None
+    if settings.ENFORCE_WIDGET_ORIGIN and not origin_allowed(origin, client, platform_host):
         raise HTTPException(status_code=403, detail="This site is not allowed to use this assistant.")

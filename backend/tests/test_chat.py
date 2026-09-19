@@ -144,3 +144,41 @@ def test_leads_are_origin_checked_and_rate_limited(api, two_tenants):
     assert lead(api, headers={"Origin": "https://evil.example"}, email="sam@example.com").status_code == 403
     codes = [lead(api, email=f"sam{i}@example.com").status_code for i in range(settings.RATE_LEAD_PER_IP_PER_MIN)]
     assert codes[-1] == 429
+
+
+# ---- where the widget may run ----
+
+def test_localhost_is_allowed_so_owners_can_try_the_widget_locally(api, two_tenants, fake_ai, monkeypatch):
+    for n, origin in enumerate(("http://localhost:5500", "http://127.0.0.1:8080", "http://[::1]:3000")):
+        assert say(api, headers={"Origin": origin}, session=f"session-local-{n:04d}").status_code == 200
+    assert say(api, headers={"Origin": "http://localhost.evil.example"}).status_code == 403
+
+    monkeypatch.setattr(settings, "ALLOW_LOCALHOST_WIDGET", False)
+    assert say(api, headers={"Origin": "http://localhost:5500"}).status_code == 403
+
+
+def test_widget_does_not_even_load_on_a_website_that_is_not_allowed(api, two_tenants):
+    url = "/api/widget/config?client_id=acme-bot"
+    assert api.get(url, headers={"Origin": "https://www.acme.com"}).status_code == 200
+    assert api.get(url, headers={"Origin": "http://localhost:5500"}).status_code == 200
+    refused = api.get(url, headers={"Origin": "https://evil.example"})
+    assert refused.status_code == 403 and "not allowed" in refused.json()["detail"]
+    assert api.get(url).status_code == 200      # no Origin: not a page embedding the widget
+
+
+def test_the_platforms_own_pages_may_run_any_bot_for_the_dashboard_preview(api, two_tenants, fake_ai):
+    # /preview.html is served by the platform itself, so its origin is the host the request arrived on
+    url = "/api/widget/config?client_id=acme-bot"
+    assert api.get(url, headers={"Origin": "http://testserver"}).status_code == 200
+    assert say(api, headers={"Origin": "http://testserver"}).status_code == 200
+
+    production = {"Host": "chat.platform.example", "Origin": "https://chat.platform.example"}
+    assert api.get(url, headers=production).status_code == 200
+    # another site naming our host as ITS origin is impossible in a browser; a different origin stays refused
+    assert api.get(url, headers={"Host": "chat.platform.example", "Origin": "https://evil.example"}).status_code == 403
+
+
+def test_pages_opened_as_files_are_refused(api, two_tenants):
+    # file:// pages send "null", but so can any website (sandboxed iframe), so it is never trusted
+    assert api.get("/api/widget/config?client_id=acme-bot", headers={"Origin": "null"}).status_code == 403
+    assert say(api, headers={"Origin": "null"}).status_code == 403
