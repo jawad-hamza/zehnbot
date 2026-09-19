@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, waitFor } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
 
 let supportBot: string | null = "zehnbot-help-1a2b3c";
 vi.mock("../api/client", () => ({
@@ -11,32 +12,52 @@ import SupportWidget from "./SupportWidget";
 import { useAuthStore } from "../store/authStore";
 
 const scripts = () => [...document.querySelectorAll<HTMLScriptElement>("script[data-zehnbot-support]")];
+const at = (path: string) => render(<MemoryRouter initialEntries={[path]}><SupportWidget /></MemoryRouter>);
+const settle = () => new Promise((r) => setTimeout(r, 30));
 
 afterEach(() => {
   cleanup();
   scripts().forEach((s) => s.remove());
-  useAuthStore.setState({ me: null });
+  document.getElementById("cb-widget-root")?.remove();
+  useAuthStore.setState({ me: null, kind: null, token: null });
+  supportBot = "zehnbot-help-1a2b3c";
 });
 
 describe("the support chat on bot.zehnox.com", () => {
-  it("loads the real widget with the bot the super admin picked", async () => {
-    render(<SupportWidget />);
+  it("loads the real widget with the bot the super admin picked, once", async () => {
+    at("/");
     await waitFor(() => expect(scripts()).toHaveLength(1));
     expect(scripts()[0].getAttribute("src")).toBe("/static/widget.js?client_id=zehnbot-help-1a2b3c");
-    render(<SupportWidget />);                       // mounted again: still one widget
-    await new Promise((r) => setTimeout(r, 20));
+    at("/login");
+    await settle();
     expect(scripts()).toHaveLength(1);
   });
 
-  it("stays away when no bot is picked, and from the super admin", async () => {
+  it("stays away when no bot is picked", async () => {
     supportBot = null;
-    render(<SupportWidget />);
-    await new Promise((r) => setTimeout(r, 20));
+    at("/");
+    await settle();
     expect(scripts()).toHaveLength(0);
-    supportBot = "zehnbot-help-1a2b3c";
-    useAuthStore.setState({ me: { role: "superadmin" } as never });
-    render(<SupportWidget />);
-    await new Promise((r) => setTimeout(r, 20));
-    expect(scripts()).toHaveLength(0);
+  });
+
+  it("shows on the public pages even to a signed-in super admin, but not inside the console", async () => {
+    useAuthStore.setState({ token: "t", kind: "operator" });
+    at("/");
+    await waitFor(() => expect(scripts()).toHaveLength(1));
+    const host = document.createElement("div");
+    host.id = "cb-widget-root";
+    document.body.appendChild(host);                  // what the widget adds once it has loaded
+    await settle();
+    expect(host.style.display).toBe("");
+    cleanup();
+    at("/overview");
+    await settle();
+    expect(host.style.display).toBe("none");
+  });
+
+  it("shows in a customer's dashboard", async () => {
+    useAuthStore.setState({ token: "t", kind: "tenant" });
+    at("/overview");
+    await waitFor(() => expect(scripts()).toHaveLength(1));
   });
 });
