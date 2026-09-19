@@ -3,6 +3,7 @@ import { api, errorDetail } from "../api/client";
 import { PasswordField } from "../components/AuthShell";
 import ContactDialog, { type ContactRequest } from "../components/ContactDialog";
 import PricingCard from "../components/PricingCard";
+import PlatformAICard from "../components/PlatformAICard";
 import ThemeToggle from "../components/ThemeToggle";
 import { useAuthStore } from "../store/authStore";
 
@@ -146,10 +147,11 @@ export default function SettingsPage() {
       <div className="zb-page-head">
         <div>
           <h1>Settings</h1>
-          <p>{isOperator ? "Plan prices, your login, and how the dashboard looks." : "Your workspace, your login, and how the dashboard looks."}</p>
+          <p>{isOperator ? "The platform AI key, plan prices, your login, and how the dashboard looks." : "Your workspace, your login, and how the dashboard looks."}</p>
         </div>
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 20, maxWidth: isOperator ? 860 : 620 }}>
+        {isOperator && <PlatformAICard />}
         {isOperator && <PricingCard />}
         <WorkspaceCard />
         <LoginCard />

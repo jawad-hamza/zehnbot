@@ -15,6 +15,7 @@ from app.routers import analytics, auth, clients, knowledge, overview, widget, c
 from app.routers.leads import public_router as leads_public, admin_router as leads_admin
 from app.routers.enquiries import public_router as enquiries_public, admin_router as enquiries_admin
 from app.routers.pricing import public_router as pricing_public, admin_router as pricing_admin
+from app.routers.platform_ai import router as platform_ai_admin
 
 logging.basicConfig(
     level=settings.LOG_LEVEL.upper(),
@@ -129,6 +130,7 @@ def create_app() -> FastAPI:
     app.include_router(tenants.router,          prefix="/api/admin", tags=["superadmin"])
     app.include_router(enquiries_admin,         prefix="/api/admin", tags=["superadmin"])
     app.include_router(pricing_admin,           prefix="/api/admin", tags=["superadmin"])
+    app.include_router(platform_ai_admin,       prefix="/api/admin", tags=["superadmin"])
 
     # Serve built widget bundle at /static/widget.js
     static_dir = os.path.join(os.path.dirname(__file__), "..", "static")

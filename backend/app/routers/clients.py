@@ -137,18 +137,18 @@ def create_client(body: ClientCreate, db: Session = Depends(get_db), user: User 
     _check_ai_settings(client)
     if body.match_website:
         rate_limit.enforce("style-match", str(user.id), settings.RATE_STYLE_MATCH_PER_USER_PER_HOUR, 3600)
-        _apply_style(client, _match_style(client))   # best effort: a site that cannot be read keeps the defaults
+        _apply_style(client, _match_style(client, db))   # best effort: a site that cannot be read keeps the defaults
     db.add(client)
     db.commit()
     db.refresh(client)
     return ClientResponse.from_model(client)
 
 
-def _match_style(client: Client) -> StyleGuess:
+def _match_style(client: Client, db: Session) -> StyleGuess:
     """Looks at the bot's website and proposes a colour and font. The AI is optional help, never required."""
     complete = None
     try:
-        endpoint, api_key, _ = resolve_ai_credentials(client)
+        endpoint, api_key, _ = resolve_ai_credentials(client, db)
         complete = lambda messages: chat_completion(messages, endpoint, api_key)[0]   # noqa: E731
     except HTTPException:
         pass
@@ -176,7 +176,7 @@ class StyleMatchResponse(BaseModel):
 def match_style(client: Client = Depends(get_owned_client), db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     """Re-reads the bot's website and restyles the widget to match it."""
     rate_limit.enforce("style-match", str(user.id), settings.RATE_STYLE_MATCH_PER_USER_PER_HOUR, 3600)
-    guess = _match_style(client)
+    guess = _match_style(client, db)
     _apply_style(client, guess)
     db.commit()
     db.refresh(client)

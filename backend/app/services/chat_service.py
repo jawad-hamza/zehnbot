@@ -7,13 +7,14 @@ from typing import Iterator, List, Optional, Tuple
 
 from fastapi import HTTPException
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, object_session
 
 from app.config import settings
 from app.database import SessionLocal
 from app.models.client import Client
 from app.models.conversation import Conversation, Message
 from app.schemas.chat import ChatResponse
+from app.services import platform_ai
 from app.services.ai_service import AIProviderError, Endpoint, chat_completion, stream_completion
 from app.services.crypto_service import decrypt_secret
 from app.services.knowledge_service import search_knowledge
@@ -164,21 +165,20 @@ class Turn:
         return tagged or reply_invites_contact(reply_text)
 
 
-def resolve_ai_credentials(client: Client) -> Tuple[Endpoint, str, bool]:
+def resolve_ai_credentials(client: Client, db: Optional[Session] = None) -> Tuple[Endpoint, str, bool]:
     """(endpoint, api_key, uses_platform_key). A bot's own key wins; otherwise the platform's AI.
 
-    A bot's own endpoint is tenant input and therefore untrusted; the platform's comes from the
-    operator's environment and may legitimately be an internal gateway."""
+    A bot's own endpoint is tenant input and therefore untrusted, and so is one typed into the super
+    admin's Settings page; only the operator's .env may point at an internal gateway."""
     own_key = decrypt_secret(client.ai_api_key)
     if own_key:
         endpoint = Endpoint(provider=client.ai_provider, model=client.ai_model, base_url=client.ai_base_url, trusted=False)
         return endpoint, own_key, False
-    if settings.platform_api_key:
-        endpoint = Endpoint(
-            provider=settings.platform_provider, model=settings.PLATFORM_AI_MODEL or None,
-            base_url=settings.PLATFORM_AI_BASE_URL or None, trusted=True,
-        )
-        return endpoint, settings.platform_api_key, True
+    # The super admin's Settings page first, then the server's .env
+    platform = platform_ai.load(db if db is not None else object_session(client))
+    if platform.configured:
+        endpoint = Endpoint(provider=platform.provider, model=platform.model, base_url=platform.base_url, trusted=platform.trusted)
+        return endpoint, platform.api_key, True
     raise HTTPException(status_code=503, detail="This assistant has no AI key configured yet.")
 
 
@@ -206,7 +206,7 @@ def _get_or_create_conversation(client: Client, session_id: str, db: Session) ->
 def prepare_turn(client: Client, session_id: str, message: str, db: Session) -> Turn:
     """Validates, records the visitor's message and builds the prompt. Raises HTTPException while
     a proper status code can still be sent, i.e. before any streaming starts."""
-    endpoint, api_key, uses_platform_key = resolve_ai_credentials(client)
+    endpoint, api_key, uses_platform_key = resolve_ai_credentials(client, db)
     if uses_platform_key and platform_quota_exceeded(client.tenant, db):
         raise HTTPException(status_code=429, detail="This assistant has reached its monthly message limit.")
 

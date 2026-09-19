@@ -17,7 +17,7 @@ from app.models.knowledge import KnowledgeChunk
 from app.models.lead import Lead
 from app.models.tenant import Tenant, UsageCounter
 from app.models.user import User
-from app.services import embedding_service
+from app.services import embedding_service, platform_ai
 from app.services.providers import get_provider
 from app.services.usage_service import current_period
 
@@ -175,7 +175,8 @@ def platform_overview(
 
     plan_counts = dict(db.query(Tenant.plan, func.count(Tenant.id)).group_by(Tenant.plan).all())
     plan_order = list(PLANS) + sorted(set(plan_counts) - set(PLANS))
-    platform = get_provider(settings.platform_provider)
+    platform_now = platform_ai.load(db)     # the dashboard's key if one is saved, else the .env's
+    platform = get_provider(platform_now.provider)
 
     probe = list(usage_by_tenant.values())
     return PlatformOverview(
@@ -213,9 +214,9 @@ def platform_overview(
         recent_tenants=recent,
         system=SystemStatus(
             environment=settings.ENVIRONMENT,
-            platform_provider=platform.label if platform else settings.platform_provider,
-            platform_model=settings.PLATFORM_AI_MODEL or (platform.default_model if platform else None),
-            platform_key_set=bool(settings.platform_api_key),
+            platform_provider=platform.label if platform else platform_now.provider,
+            platform_model=platform_now.model or (platform.default_model if platform else None),
+            platform_key_set=platform_now.configured,
             semantic_search=embedding_service.semantic_search_available(db),
             signup_open=settings.signup_open,
             signup_wanted=settings.ALLOW_SIGNUP,
