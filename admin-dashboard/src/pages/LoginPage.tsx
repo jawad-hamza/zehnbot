@@ -22,7 +22,7 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [unverified, setUnverified] = useState(false);
   const [config, setConfig] = useState({ allowSignup: false, google: false });
-  const token = useAuthStore((s) => s.token);
+  const token = useAuthStore((s) => (s.kind === "operator" ? null : s.token));   // this page is the customers' door
   const setToken = useAuthStore((s) => s.setToken);
   const navigate = useNavigate();
 
@@ -38,7 +38,7 @@ export default function LoginPage() {
     setError("");
     try {
       const res = await api.post("/auth/login", { email, password });
-      setToken(res.data.access_token);
+      setToken(res.data.access_token, "tenant");
       navigate("/overview");
     } catch (err: unknown) {
       const response = (err as { response?: { status?: number; headers?: Record<string, string> } })?.response;

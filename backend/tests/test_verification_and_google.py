@@ -109,7 +109,7 @@ def test_a_confirmed_address_cannot_be_registered_again(api, outbox):
 def test_logins_made_by_the_operator_and_the_operator_are_never_locked_out(api, superadmin, outbox):
     make_tenant(api, superadmin, "Acme", "owner@acme.com")
     assert login(api, "owner@acme.com")
-    assert login(api, "root")
+    assert login(api, "root", console=True)
 
 
 def test_a_failing_mail_server_does_not_fail_the_signup(api, monkeypatch):

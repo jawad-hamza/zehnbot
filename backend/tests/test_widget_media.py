@@ -82,18 +82,21 @@ def test_only_the_owner_can_change_a_bots_pictures(api, two_tenants):
 
 
 def test_the_super_admin_chooses_the_support_bot_for_our_pages(api, superadmin, two_tenants):
+    url = "/api/admin/site-chats"
     assert api.get("/api/public/support-bot").json() == {"client_id": None}
-    assert api.put("/api/admin/support-bot", headers=auth(two_tenants["acme"]["token"]), json={"client_id": "acme-bot"}).status_code == 403
-    assert api.put("/api/admin/support-bot", headers=auth(superadmin), json={"client_id": "no-such-bot"}).status_code == 404
-    assert api.put("/api/admin/support-bot", headers=auth(superadmin), json={"client_id": "acme-bot"}).status_code == 200
+    assert api.put(url, headers=auth(two_tenants["acme"]["token"]), json={"support_client_id": "acme-bot"}).status_code == 403
+    assert api.get(url, headers=auth(two_tenants["acme"]["token"])).status_code == 403
+    assert api.put(url, headers=auth(superadmin), json={"support_client_id": "no-such-bot"}).status_code == 404
+    assert api.put(url, headers=auth(superadmin), json={"support_client_id": "acme-bot"}).status_code == 200
     assert api.get("/api/public/support-bot").json() == {"client_id": "acme-bot"}
-    api.put("/api/admin/support-bot", headers=auth(superadmin), json={"client_id": None})
+    assert api.get(url, headers=auth(superadmin)).json()["support_client_id"] == "acme-bot"
+    api.put(url, headers=auth(superadmin), json={"support_client_id": None})
     assert api.get("/api/public/support-bot").json() == {"client_id": None}
 
 
 def test_the_support_chat_has_a_daily_allowance_per_visitor(api, superadmin, two_tenants, fake_ai, monkeypatch):
     monkeypatch.setattr(settings, "RATE_SUPPORT_BOT_PER_IP_PER_DAY", 2)
-    api.put("/api/admin/support-bot", headers=auth(superadmin), json={"client_id": "acme-bot"})
+    api.put("/api/admin/site-chats", headers=auth(superadmin), json={"support_client_id": "acme-bot"})
 
     def say(n, headers=OURS):
         return api.post("/api/chat/message", headers=headers, json={"client_id": "acme-bot", "session_id": f"support-{n:08d}", "message": "Hi"})

@@ -52,7 +52,8 @@ function Shot({ name, alt, width, height, eager, themed = true }: { name: string
 }
 
 export default function LandingPage() {
-  const signedIn = useAuthStore((s) => !!s.token);
+  // Only a customer's session counts here: the landing page never leads into the operator console
+  const signedIn = useAuthStore((s) => !!s.token && s.kind === "tenant");
   const reduce = useReducedMotion();
   const [demoBot, setDemoBot] = useState<string | null>(null);
   const [signupOpen, setSignupOpen] = useState(true);

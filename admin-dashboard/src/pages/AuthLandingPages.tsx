@@ -23,7 +23,7 @@ export function VerifyEmailPage() {
     }
     api.post("/auth/verify-email", { token })
       .then((res) => {
-        setToken(res.data.access_token);
+        setToken(res.data.access_token, "tenant");
         navigate("/overview", { replace: true });
       })
       .catch((err: unknown) => setError(errorDetail(err, "This link could not be confirmed. Ask for a new one from the log in page.")));
@@ -58,7 +58,7 @@ export function AuthCallbackPage() {
     const token = new URLSearchParams(window.location.hash.slice(1)).get("token");
     window.history.replaceState(null, "", window.location.pathname);   // take it out of the address bar and the history
     if (token) {
-      setToken(token);
+      setToken(token, "tenant");
       navigate("/overview", { replace: true });
     } else {
       navigate("/login?google=failed", { replace: true });

@@ -16,6 +16,18 @@ def test_unknown_user_gets_same_answer_as_wrong_password(api, superadmin):
     assert res.json()["detail"] == "Invalid credentials"
 
 
+def test_the_public_login_never_admits_or_reveals_the_operator(api, superadmin):
+    make_tenant(api, superadmin, "Acme", "owner@acme.com")
+    public = api.post("/api/auth/login", json={"email": "root", "password": PASSWORD})
+    wrong = api.post("/api/auth/login", json={"email": "root", "password": "nope-nope-nope"})
+    assert public.status_code == wrong.status_code == 401
+    assert public.json() == wrong.json() == {"detail": "Invalid credentials"}    # same answer as a wrong password
+    # the console's page is only for the operator
+    assert api.post("/api/auth/login", json={"email": "owner@acme.com", "password": PASSWORD, "console": True}).status_code == 401
+    assert api.post("/api/auth/login", json={"email": "owner@acme.com", "password": PASSWORD}).status_code == 200
+    assert api.post("/api/auth/login", json={"email": "root", "password": PASSWORD, "console": True}).status_code == 200
+
+
 def test_login_is_rate_limited_per_account(api, superadmin):
     for _ in range(settings.RATE_LOGIN_PER_ACCOUNT_PER_5MIN):
         api.post("/api/auth/login", json={"email": "root", "password": "wrong-password"})

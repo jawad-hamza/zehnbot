@@ -8,7 +8,7 @@ import { useAuthStore } from "../store/authStore";
  * The widget cannot be unloaded once it is on the page, so it is hidden rather than removed.
  */
 export default function SupportWidget() {
-  const isOperator = useAuthStore((s) => s.me?.role === "superadmin");
+  const isOperator = useAuthStore((s) => s.kind === "operator" || s.me?.role === "superadmin");
   const [clientId, setClientId] = useState<string | null>(null);
 
   useEffect(() => {

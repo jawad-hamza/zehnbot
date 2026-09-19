@@ -106,15 +106,18 @@ On start the backend applies migrations and creates the super admin if none exis
 |------------------|---------------------------------------------------------------------------------------------|
 | `/`              | The public landing page (light and dark). Its calls to action follow `ALLOW_SIGNUP`.        |
 | `/signup`        | Self-service registration: creates a workspace on `DEFAULT_SIGNUP_PLAN` and logs the owner in. Closed (with a way to ask for access) when `ALLOW_SIGNUP=false`. |
-| `/login`         | Everyone signs in here. The role decides which dashboard opens.                              |
+| `/login`         | Customers sign in here (and sign up at `/signup`). Operator accounts are refused here with the same answer as a wrong password. |
+| `/console`       | The super admin signs in here. Linked from nowhere public; customer accounts are refused.   |
 | `/overview`      | Customers: their workspace (setup checklist, conversations, leads, open questions, quota). Super admin: the operator console (every workspace, sign-ups, usage against quota, system status). |
 | `/bots`, `/settings` | Bots and their knowledge, conversations, leads and insights; workspace name, login and appearance. |
 | `/tenants`       | Super admin only: create, suspend and delete workspaces, set plans and limits, reset logins. |
 | `/enquiries`     | Super admin only: people who pressed **Talk to Zehnox** (the platform's own leads). Mark as contacted, close, export CSV. |
 | `/verify-email`, `/auth/callback` | Where the confirmation email's link and Google sign-in land. Nobody navigates here by hand. |
 
-**Live demo on the landing page.** Set `LANDING_DEMO_BOT` to the client id of a bot you are happy
-for the public to talk to. The landing page then shows a real, streaming conversation with it
+**Chats on this site.** In the console, Settings > *Chats on this site* picks two of your bots: the
+**support chat** in the lower-right corner of every page (each visitor gets `RATE_SUPPORT_BOT_PER_IP_PER_DAY`
+messages a day, 50 by default), and the **live demo** on the landing page. For the demo, `LANDING_DEMO_BOT`
+in `.env` still works when nothing is picked in Settings. The landing page then shows a real, streaming conversation with it
 (that workspace's quota applies, and each visitor's IP address gets `RATE_LANDING_DEMO_PER_IP_PER_DAY` messages a day, 20 by default; the bot's own website is not affected by this allowance). Leave it empty and the page shows a screenshot instead.
 
 **Talk to Zehnox.** Every "Talk to Zehnox" button (landing page, pricing, closed sign-up, a

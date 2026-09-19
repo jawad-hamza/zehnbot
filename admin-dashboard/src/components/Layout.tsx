@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { api } from "../api/client";
-import { useAuthStore } from "../store/authStore";
+import { loginPathFor, useAuthStore } from "../store/authStore";
 import ThemeToggle from "./ThemeToggle";
 import { BrandMark, IconBot, IconHome, IconLogout, IconMenu, IconInbox, IconSettings, IconUsers } from "./icons";
 
@@ -22,8 +22,9 @@ export default function Layout() {
   }, [location.pathname, setMe]);
 
   function handleLogout() {
+    const back = loginPathFor(useAuthStore.getState().kind);
     logout();
-    navigate("/login");
+    navigate(back);
   }
 
   const isOperator = me?.role === "superadmin";

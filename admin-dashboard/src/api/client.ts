@@ -1,5 +1,5 @@
 import axios from "axios";
-import { useAuthStore } from "../store/authStore";
+import { loginPathFor, useAuthStore } from "../store/authStore";
 
 export const api = axios.create({
   baseURL: "/api",
@@ -22,8 +22,9 @@ api.interceptors.response.use(
     const url: string = err.config?.url ?? "";
     const sessionEnded = err.response?.status === 401 && !CREDENTIAL_ENDPOINTS.some((p) => url.startsWith(p));
     if (sessionEnded) {
+      const back = loginPathFor(useAuthStore.getState().kind);
       useAuthStore.getState().logout();
-      window.location.href = "/login";
+      window.location.href = back;
     }
     return Promise.reject(err);
   }

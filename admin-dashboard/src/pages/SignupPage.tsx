@@ -19,7 +19,7 @@ export default function SignupPage() {
   const [config, setConfig] = useState<{ allowed: boolean; google: boolean; googleSignup: boolean } | null>(null);
   const [inbox, setInbox] = useState(false);
   const [contact, setContact] = useState<ContactRequest | null>(null);
-  const token = useAuthStore((s) => s.token);
+  const token = useAuthStore((s) => (s.kind === "operator" ? null : s.token));   // an operator session is not a customer's
   const setToken = useAuthStore((s) => s.setToken);
   const navigate = useNavigate();
 
@@ -41,7 +41,7 @@ export default function SignupPage() {
         setInbox(true);      // no session until the link in the email is opened
         return;
       }
-      setToken(res.data.access_token);
+      setToken(res.data.access_token, "tenant");
       navigate("/overview");
     } catch (err: unknown) {
       setError(errorDetail(err, "Could not create the account. Please try again."));

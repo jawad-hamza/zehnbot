@@ -170,10 +170,23 @@ def test_an_empty_honeypot_is_a_normal_signup(api):
     assert res.status_code == 201, res.text
 
 
-def test_auth_config_names_the_demo_bot_only_when_one_is_set(api, monkeypatch):
+def test_auth_config_names_the_demo_bot_only_when_one_is_set_and_exists(api, superadmin, monkeypatch):
     assert api.get("/api/auth/config").json()["demo_client_id"] is None
     monkeypatch.setattr(settings, "LANDING_DEMO_BOT", "  tallis-cycles ")
+    # a name in .env for a bot that does not exist would show a demo that cannot answer
+    assert api.get("/api/auth/config").json()["demo_client_id"] is None
+    make_tenant(api, superadmin, "Tallis", "owner@tallis.example")
+    make_bot(api, login(api, "owner@tallis.example"), "tallis-cycles", "talliscycles.example")
     assert api.get("/api/auth/config").json()["demo_client_id"] == "tallis-cycles"
+
+
+def test_the_demo_bot_picked_in_settings_wins_over_env(api, superadmin, two_tenants, monkeypatch):
+    monkeypatch.setattr(settings, "LANDING_DEMO_BOT", "globex-bot")
+    saved = api.put("/api/admin/site-chats", headers=auth(superadmin), json={"demo_client_id": "acme-bot", "support_client_id": None})
+    assert saved.status_code == 200 and saved.json()["demo_from_env"] == "globex-bot"
+    assert api.get("/api/auth/config").json()["demo_client_id"] == "acme-bot"
+    api.put("/api/admin/site-chats", headers=auth(superadmin), json={"demo_client_id": None, "support_client_id": None})
+    assert api.get("/api/auth/config").json()["demo_client_id"] == "globex-bot"
 
 
 def test_the_landing_demo_may_talk_to_the_demo_bot_from_the_platform_host(api, superadmin, fake_ai):

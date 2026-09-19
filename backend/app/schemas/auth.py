@@ -9,6 +9,8 @@ class LoginRequest(BaseModel):
     # Called "email" for historical reasons; older accounts log in with a plain username.
     email: str = Field(min_length=1, max_length=255)
     password: str = Field(min_length=1, max_length=200)
+    # True only from the operator console's own sign-in page
+    console: bool = False
 
 
 class TokenResponse(BaseModel):

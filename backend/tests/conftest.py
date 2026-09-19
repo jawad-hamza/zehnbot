@@ -75,8 +75,8 @@ def auth(token: str) -> dict:
     return {"Authorization": f"Bearer {token}"}
 
 
-def login(api, email: str, password: str = PASSWORD) -> str:
-    res = api.post("/api/auth/login", json={"email": email, "password": password})
+def login(api, email: str, password: str = PASSWORD, console: bool = False) -> str:
+    res = api.post("/api/auth/login", json={"email": email, "password": password, "console": console})
     assert res.status_code == 200, res.text
     return res.json()["access_token"]
 
@@ -85,7 +85,7 @@ def login(api, email: str, password: str = PASSWORD) -> str:
 def superadmin(api, db):
     db.add(User(email="root", hashed_password=hash_password(PASSWORD), role=ROLE_SUPERADMIN))
     db.commit()
-    return login(api, "root")
+    return login(api, "root", console=True)
 
 
 def make_tenant(api, superadmin_token: str, name: str, email: str, plan: str = "starter") -> dict:

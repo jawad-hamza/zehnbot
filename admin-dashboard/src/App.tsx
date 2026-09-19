@@ -17,6 +17,7 @@ import HomeRoute from "./pages/HomeRoute";
 import EnquiriesPage from "./pages/EnquiriesPage";
 import { AuthCallbackPage, VerifyEmailPage } from "./pages/AuthLandingPages";
 import SupportWidget from "./components/SupportWidget";
+import ConsoleLoginPage from "./pages/ConsoleLoginPage";
 
 
 export default function App() {
@@ -27,6 +28,7 @@ export default function App() {
         <Route path="/" element={<HomeRoute />} />
         <Route path="/login" element={<LoginPage />} />
         <Route path="/signup" element={<SignupPage />} />
+        <Route path="/console" element={<ConsoleLoginPage />} />
         <Route path="/verify-email" element={<VerifyEmailPage />} />
         <Route path="/auth/callback" element={<AuthCallbackPage />} />
         <Route

@@ -25,6 +25,7 @@ from app.schemas.auth import (
     UserInfo,
     VerifyEmailRequest,
 )
+from app.routers.support import demo_client_id
 from app.services import rate_limit
 from app.services import google_service
 from app.services.auth_service import (
@@ -64,9 +65,9 @@ def _marketing_url() -> Optional[str]:
 
 
 @router.get("/config", response_model=AuthConfig)
-def auth_config():
+def auth_config(db: Session = Depends(get_db)):
     return AuthConfig(
-        allow_signup=settings.signup_open, demo_client_id=settings.LANDING_DEMO_BOT.strip() or None,
+        allow_signup=settings.signup_open, demo_client_id=demo_client_id(db),
         google_enabled=settings.google_enabled, google_signup=settings.google_signup_open,
         email_verification=settings.email_enabled,
         marketing_url=_marketing_url(),
@@ -85,7 +86,10 @@ def login(body: LoginRequest, request: Request, db: Session = Depends(get_db)):
         user = db.query(User).filter(User.email == typed.lower()).first()
     if not user:
         burn_password_check(body.password)
-    if not user or not verify_password(body.password, user.hashed_password) or not user.is_active:
+    # The public log-in page is for customers; the operator signs in on the console's own page. The wrong
+    # page answers exactly like a wrong password, so the public page never reveals an operator account.
+    wrong_door = user is not None and user.is_superadmin != body.console
+    if not user or not verify_password(body.password, user.hashed_password) or not user.is_active or wrong_door:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid credentials",
@@ -214,8 +218,12 @@ def google_callback(
         return _back_to_login("failed")
 
     user = db.query(User).filter(User.google_sub == identity.sub).first()
+    if user is not None and user.is_superadmin:
+        return _back_to_login("no-account")      # Google sign-in is the customers' door, never the operator's
     if user is None:
         user = db.query(User).filter(User.email == identity.email).first()
+        if user is not None and user.is_superadmin:
+            return _back_to_login("no-account")
         if user is not None:
             if user.email_verified_at is None:
                 # This address was registered with a password but never confirmed. Google has now proven

@@ -101,7 +101,7 @@ function LoginCard() {
         new_password: newPassword || undefined,
       });
       // a password change revokes the old session token; the server hands back a new one
-      setToken(res.data.access_token);
+      setToken(res.data.access_token, useAuthStore.getState().kind ?? "tenant");
       setCurrentEmail(newEmail);
       setCurrentPassword("");
       if (newPassword) setHasPassword(true);

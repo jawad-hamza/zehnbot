@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import HomeRoute from "./HomeRoute";
@@ -35,6 +35,12 @@ function renderRoot() {
 
 let consoleError: ReturnType<typeof vi.spyOn>;
 
+// Compile the lazily loaded landing page once, up front: on a busy machine that first compile can take
+// longer than any single test should wait, and it is not what these tests are about
+beforeAll(async () => {
+  await import("./LandingPage");
+}, 240000);
+
 beforeEach(() => {
   // jsdom has neither of these; the landing page's scroll effects use them
   vi.stubGlobal("IntersectionObserver", class { observe() {} unobserve() {} disconnect() {} takeRecords() { return []; } });
@@ -44,7 +50,7 @@ beforeEach(() => {
   }));
   // jsdom reports any attempt to leave the page (location.replace/assign to another site) as an error here
   consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
-  useAuthStore.setState({ token: null, me: null });
+  useAuthStore.setState({ token: null, kind: null, me: null });
 });
 
 afterEach(() => {
@@ -78,8 +84,18 @@ describe("GET / on bot.zehnox.com", { timeout: 60000 }, () => {
     for (const link of logIn) expect(link.getAttribute("href")).toBe("/login");
   });
 
-  it("shows the same page to a signed-in user, with Open dashboard leading to the dashboard", async () => {
-    useAuthStore.setState({ token: "a-session" });
+  it("never points the operator into the console: their session looks signed out here", async () => {
+    useAuthStore.setState({ token: "operator-session", kind: "operator" });
+    renderRoot();
+
+    expect(await screen.findByRole("heading", { level: 1, name: "Turn questions into leads." }, { timeout: 30000 })).toBeTruthy();
+    expect(screen.queryAllByRole("link", { name: /Open dashboard/ })).toEqual([]);
+    for (const link of screen.getAllByRole("link", { name: "Log in" })) expect(link.getAttribute("href")).toBe("/login");
+    expect(document.body.innerHTML).not.toMatch(/console|super ?admin|operator/i);
+  });
+
+  it("shows the same page to a signed-in customer, with Open dashboard leading to their dashboard", async () => {
+    useAuthStore.setState({ token: "a-session", kind: "tenant" });
     renderRoot();
 
     expect(await screen.findByRole("heading", { level: 1, name: "Turn questions into leads." }, { timeout: 30000 })).toBeTruthy();

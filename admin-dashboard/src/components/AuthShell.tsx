@@ -1,28 +1,27 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
-import { api } from "../api/client";
 import ThemeToggle from "./ThemeToggle";
 import { BrandMark, IconCheck, IconEye, IconEyeOff, ZehnoxWordmark } from "./icons";
 
 /** Shared frame for sign-in and sign-up: the form on one side, what the product does on the other. */
-export default function AuthShell({ children }: { children: ReactNode }) {
-  // The logo leads back to the landing page, wherever that lives
-  const [marketingUrl, setMarketingUrl] = useState<string | null>(null);
-  useEffect(() => {
-    api.get("/auth/config").then((r) => setMarketingUrl(r.data.marketing_url ?? null)).catch(() => undefined);
-  }, []);
-
+export default function AuthShell({ children, plain = false }: { children: ReactNode; plain?: boolean }) {
   return (
     <div className="zb-auth">
       <div className="zb-auth-main">
         <div className="zb-auth-top">
-          {marketingUrl
-            ? <a href={marketingUrl} className="zb-brand" style={{ padding: 0 }}><BrandMark /> ZehnBot</a>
-            : <Link to="/" className="zb-brand" style={{ padding: 0 }}><BrandMark /> ZehnBot</Link>}
+          {/* The logo leads to ZehnBot's own landing page, on this site */}
+          <Link to="/" className="zb-brand" style={{ padding: 0 }}><BrandMark /> ZehnBot</Link>
           <ThemeToggle />
         </div>
         {children}
       </div>
+      {!plain && <AuthSide />}
+    </div>
+  );
+}
+
+function AuthSide() {
+  return (
       <aside className="zb-auth-side" aria-label="What ZehnBot does">
         <div>
           <h2>Your website answers. You get the lead.</h2>
@@ -35,7 +34,6 @@ export default function AuthShell({ children }: { children: ReactNode }) {
         </div>
         <span className="zb-zehnox" role="img" aria-label="Made by Zehnox"><span aria-hidden="true">Made by</span> <ZehnoxWordmark /></span>
       </aside>
-    </div>
   );
 }
 
