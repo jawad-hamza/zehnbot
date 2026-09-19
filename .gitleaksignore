@@ -1,0 +1,6 @@
+# Reviewed 2026-09-19: fake values that exist only in the test suite (several of them to prove that real
+# keys are never echoed back to visitors). Listed by exact finding, so anything new still fails CI.
+2e6b893ac85735d0834f71a7eca5b5e3c14d35f4:backend/tests/conftest.py:generic-api-key:15
+2e6b893ac85735d0834f71a7eca5b5e3c14d35f4:backend/tests/test_chat.py:generic-api-key:69
+2e6b893ac85735d0834f71a7eca5b5e3c14d35f4:backend/tests/test_provider_catalogue.py:generic-api-key:89
+2e6b893ac85735d0834f71a7eca5b5e3c14d35f4:backend/tests/test_provider_catalogue.py:generic-api-key:91

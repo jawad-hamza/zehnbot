@@ -152,3 +152,37 @@ def test_failed_crawl_is_reported_not_swallowed(api, two_tenants, monkeypatch):
     started = api.post(f"/api/admin/clients/{bot_id}/knowledge/crawl", headers=headers, json={"url": "https://8.8.8.8/"})
     job = api.get(f"/api/admin/clients/{bot_id}/knowledge/jobs/{started.json()['id']}", headers=headers).json()
     assert job["status"] == "failed" and "No pages" in job["error"]
+
+
+def test_readiness_is_reachable_behind_the_proxy_too(api):
+    """nginx only forwards /api/ and /static/, so the deploy script and any monitor use the /api/ address."""
+    assert api.get("/health/ready").json() == {"status": "ready"}
+    assert api.get("/api/health/ready").json() == {"status": "ready"}
+
+
+def test_an_older_release_starts_on_a_database_a_newer_release_migrated(db):
+    """A rollback across a release that added a migration: the older code must still start."""
+    import os
+    from alembic.config import Config
+    from alembic.script import ScriptDirectory
+    from sqlalchemy import text
+
+    from scripts.migrate import BACKEND_DIR, database_is_ahead, revision_is_known
+
+    cfg = Config(os.path.join(BACKEND_DIR, "alembic.ini"))
+    cfg.set_main_option("script_location", os.path.join(BACKEND_DIR, "alembic"))
+    script = ScriptDirectory.from_config(cfg)
+    head = script.get_current_head()
+    assert revision_is_known(script, head) and revision_is_known(script, "0001")
+    assert not revision_is_known(script, "0999_from_the_future")
+
+    db.execute(text("CREATE TABLE IF NOT EXISTS alembic_version (version_num VARCHAR(32) NOT NULL)"))
+    db.execute(text("DELETE FROM alembic_version"))
+    db.execute(text("INSERT INTO alembic_version VALUES (:v)"), {"v": head})
+    db.commit()
+    assert database_is_ahead(cfg) is False            # the normal case: upgrade as usual
+    db.execute(text("UPDATE alembic_version SET version_num = '0999_from_the_future'"))
+    db.commit()
+    assert database_is_ahead(cfg) is True             # a rollback: leave the schema alone, start anyway
+    db.execute(text("DROP TABLE alembic_version"))
+    db.commit()

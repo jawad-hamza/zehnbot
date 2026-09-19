@@ -88,6 +88,8 @@ OpenRouter (see `.env.example`); otherwise bots use keyword search, which works 
 There is no payment integration yet. Plans are assigned by hand. `tenants.plan`,
 `monthly_message_quota` and `max_bots` are the fields a Stripe webhook would update.
 
+**Production deployment** (bot.zehnox.com, GitHub Actions, rollback): see [DEPLOYMENT.md](DEPLOYMENT.md).
+
 ## Run it
 
 ```bash

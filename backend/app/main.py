@@ -80,7 +80,7 @@ def create_app() -> FastAPI:
         # /api/public/ is the same for everyone and sets its own short cache; everything else is per person
         if request.url.path.startswith("/api/") and not request.url.path.startswith("/api/public/"):
             response.headers["Cache-Control"] = "no-store"
-        if not request.url.path.startswith("/health"):
+        if not request.url.path.startswith(("/health", "/api/health")):
             logger.info(
                 "%s %s -> %s %.0fms rid=%s",
                 request.method, request.url.path, response.status_code,
@@ -95,6 +95,9 @@ def create_app() -> FastAPI:
         """Liveness: the process is up."""
         return {"status": "ok"}
 
+    # The same check twice: /health/ready for Docker (inside the container), /api/health/ready for
+    # everything in front of nginx: the deploy script, the host's reverse proxy, an uptime monitor.
+    @app.get("/api/health/ready", include_in_schema=False)
     @app.get("/health/ready", include_in_schema=False)
     def ready():
         """Readiness: the database answers."""

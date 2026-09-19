@@ -1,0 +1,219 @@
+# Every push and pull request: tests, builds, and a full release rehearsal with the real images.
+# A push to main then publishes those exact images and deploys them to bot.zehnox.com, but only once the
+# repository variable ZEHNBOT_DEPLOY_ENABLED is "true" (set it after the one-time VPS setup in DEPLOYMENT.md).
+#
+#   test  ->  images (build + rehearse deploy/failed deploy/rollback + publish)  ->  deploy
+#
+# Nothing reaches the server unless every step before it passed.
+name: CI and deploy
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Tests and build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0              # the secret scan reads the whole history
+
+      - name: No secrets in the repository or its history
+        run: |
+          if git ls-files | grep -E '(^|/)\.env$|(^|/)\.env\.[^e]|\.pem$|id_rsa|\.sql(\.gz)?$'; then
+            echo "::error::A secret-bearing file is tracked (listed above)."; exit 1
+          fi
+          # gitleaks v8.30.1, pinned by digest. The GIT_CONFIG_* variables stop git refusing a checkout
+          # owned by another user (the runner) inside the container. Reviewed test fakes: .gitleaksignore
+          docker run --rm -v "$PWD:/repo" \
+            -e GIT_CONFIG_COUNT=1 -e GIT_CONFIG_KEY_0=safe.directory -e GIT_CONFIG_VALUE_0='*' \
+            ghcr.io/gitleaks/gitleaks@sha256:c00b6bd0aeb3071cbcb79009cb16a60dd9e0a7c60e2be9ab65d25e6bc8abbb7f \
+            git /repo --no-banner --redact
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"      # the version in backend/Dockerfile
+          cache: pip
+          cache-dependency-path: backend/requirements*.txt
+      - name: Backend tests
+        working-directory: backend
+        run: |
+          pip install -r requirements.txt -r requirements-dev.txt
+          python -m pytest -q -p no:warnings
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"          # the version in the Dockerfiles
+          cache: npm
+          cache-dependency-path: |
+            widget/package-lock.json
+            admin-dashboard/package-lock.json
+      - name: Widget tests
+        working-directory: widget
+        run: npm ci && npm test
+      - name: Dashboard type check and build
+        working-directory: admin-dashboard
+        run: npm ci && npx tsc --noEmit && npm run build
+
+      - name: Deploy scripts and nginx configuration
+        run: |
+          for f in deploy/*.sh deploy/nginx/*.sh; do bash -n "$f"; done
+          shellcheck -S error deploy/*.sh deploy/nginx/*.sh
+          bash deploy/nginx/check.sh nginx:1.30-alpine      # nginx -t on the configuration proposed for the server
+
+  images:
+    name: Build images, rehearse a release, publish
+    needs: test
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      release: ${{ steps.names.outputs.release }}
+      registry: ${{ steps.names.outputs.registry }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Names
+        id: names
+        run: |
+          echo "registry=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_OUTPUT"
+          echo "release=${GITHUB_SHA::12}" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@v3
+      - name: Build the API image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: backend/Dockerfile
+          load: true
+          tags: ${{ steps.names.outputs.registry }}/zehnbot-backend:${{ steps.names.outputs.release }}
+          labels: org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+          cache-from: type=gha,scope=backend
+          cache-to: type=gha,mode=max,scope=backend
+      - name: Build the dashboard image
+        uses: docker/build-push-action@v6
+        with:
+          context: admin-dashboard
+          load: true
+          tags: ${{ steps.names.outputs.registry }}/zehnbot-admin:${{ steps.names.outputs.release }}
+          labels: org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+          cache-from: type=gha,scope=admin
+          cache-to: type=gha,mode=max,scope=admin
+      - name: Build the database image
+        uses: docker/build-push-action@v6
+        with:
+          context: db
+          load: true
+          tags: ${{ steps.names.outputs.registry }}/zehnbot-db:pg16
+          labels: org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+          cache-from: type=gha,scope=db
+          cache-to: type=gha,mode=max,scope=db
+
+      # The real deploy and rollback scripts, the real images, the production compose file, with visitors
+      # (GET and POST) going through a stand-in for the server's nginx the whole time: deploy, deploy again,
+      # a broken release (refused), one that fails only in production (undone), a rollback onto a newer
+      # schema, an edge configuration change and a broken one. Any visitor error fails the build.
+      - name: Rehearse release cycles with these images
+        run: bash deploy/drill.sh "${{ steps.names.outputs.registry }}" "${{ steps.names.outputs.release }}"
+
+      # Exactly the images that were just tested. Nothing is rebuilt between the rehearsal and production.
+      - name: Publish to GitHub Container Registry
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        env:
+          REGISTRY: ${{ steps.names.outputs.registry }}
+          RELEASE: ${{ steps.names.outputs.release }}
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+          docker push -q "$REGISTRY/zehnbot-backend:$RELEASE"
+          docker push -q "$REGISTRY/zehnbot-admin:$RELEASE"
+          docker push -q "$REGISTRY/zehnbot-db:pg16"
+          docker logout ghcr.io
+
+  deploy:
+    name: Deploy to bot.zehnox.com
+    needs: images
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && vars.ZEHNBOT_DEPLOY_ENABLED == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    environment:
+      name: production
+      url: https://bot.zehnox.com
+    # One deployment (or rollback) at a time. A running one is never cancelled half way; a newer push waits.
+    concurrency:
+      group: zehnbot-production
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      packages: read
+    env:
+      RELEASE: ${{ needs.images.outputs.release }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # Two pushes in quick succession can finish their builds out of order. Deploy only the newest
+      # commit on main, so an older build can never replace a newer one. (That newer commit's own run deploys it.)
+      - name: Still the newest commit on main?
+        id: newest
+        run: |
+          tip="$(git ls-remote origin refs/heads/main | cut -f1)"
+          if [[ "$tip" != "$GITHUB_SHA" ]]; then
+            echo "::notice::main has moved on to ${tip::12}; its own run deploys it. Skipping ${GITHUB_SHA::12}."
+            echo "deploy=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "deploy=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: ./.github/actions/vps-ssh
+        if: steps.newest.outputs.deploy == 'true'
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          port: ${{ secrets.VPS_PORT }}
+          user: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          known-hosts: ${{ secrets.VPS_KNOWN_HOSTS }}
+
+      - name: Upload this release's files
+        if: steps.newest.outputs.deploy == 'true'
+        run: |
+          ssh vps "test -f /opt/zehnbot/.env" || { echo "::error::/opt/zehnbot/.env does not exist on the server. Do the one-time setup in DEPLOYMENT.md first."; exit 1; }
+          ssh vps "mkdir -p /opt/zehnbot/releases/$RELEASE/edge"
+          scp -q deploy/compose.prod.yaml "vps:/opt/zehnbot/releases/$RELEASE/compose.yaml"
+          scp -q deploy/deploy.sh deploy/rollback.sh deploy/healthcheck.sh deploy/lib.sh "vps:/opt/zehnbot/releases/$RELEASE/"
+          scp -q deploy/edge/* "vps:/opt/zehnbot/releases/$RELEASE/edge/"
+          ssh vps "chmod 755 /opt/zehnbot/releases/$RELEASE/*.sh"
+
+      - name: Deploy (candidate first; the current release keeps serving until a healthy one replaces it)
+        if: steps.newest.outputs.deploy == 'true'
+        env:
+          # Registry access for this deploy only: this token expires when the job ends, and the login is
+          # removed from the server again straight after the pull.
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GHCR_USER: ${{ github.actor }}
+        run: |
+          printf '%s' "$GHCR_TOKEN" | ssh vps "docker login ghcr.io -u '$GHCR_USER' --password-stdin >/dev/null"
+          set +e
+          ssh vps "/opt/zehnbot/releases/$RELEASE/deploy.sh $RELEASE"
+          status=$?
+          ssh vps "docker logout ghcr.io >/dev/null 2>&1"
+          exit $status
+
+      - name: Check from the internet
+        if: steps.newest.outputs.deploy == 'true'
+        continue-on-error: true      # a warning only: the server has already verified the release on 127.0.0.1
+        run: |
+          if curl -fsS -m 15 https://bot.zehnox.com/api/health/ready | grep -q '"ready"'; then
+            echo "https://bot.zehnox.com answers."
+          else
+            echo "::warning::ZehnBot is healthy on the server, but https://bot.zehnox.com does not reach it yet. Has nginx been pointed at 127.0.0.1:3001? (DEPLOYMENT.md)"
+            exit 1
+          fi

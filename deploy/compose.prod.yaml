@@ -1,0 +1,171 @@
+# ZehnBot in production. Lives at /opt/zehnbot/releases/<release>/compose.yaml on the VPS and is only
+# ever run by deploy.sh / rollback.sh:
+#
+#   docker compose -p zehnbot --project-directory /opt/zehnbot --env-file /opt/zehnbot/.env -f <this file> ...
+#
+# Nothing is built on the server: ZehnBot's images come from GitHub Container Registry, tagged with the git
+# commit they were built from. RELEASE and CANDIDATE_RELEASE are set by the scripts, never by hand.
+#
+#   Cloudflare -> server nginx (TLS) -> 127.0.0.1:3001 edge -> admin            (production web + /api proxy) -> backend -> db, redis
+#                                                          \-> admin-candidate  (only during a deploy)          -> backend-candidate
+#
+# Published ports, all on the loopback interface only:
+#   3001 edge (the server's nginx points here)   3002 candidate, direct   3003 production, direct
+# (the direct ports exist so the deploy can check each slot on its own). Postgres, Redis and the API
+# are reachable from nowhere but this project's own networks.
+
+name: zehnbot
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
+# The API. Secrets come from /opt/zehnbot/.env (mode 600): never in git, never in an image.
+x-backend: &backend
+  restart: unless-stopped
+  env_file:
+    - path: ${ZEHNBOT_ENV_FILE:-/opt/zehnbot/.env}
+      required: true
+  depends_on:
+    db:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+  logging: *logging
+  # The image's HEALTHCHECK asks /health/ready, which asks the database.
+
+x-backend-env: &backend-env
+  ENVIRONMENT: production
+  DATABASE_URL: postgresql://chatbot:${DB_PASSWORD:?set DB_PASSWORD in /opt/zehnbot/.env}@db:5432/chatbotdb
+  REDIS_URL: redis://redis:6379/0
+
+x-web-health: &web-health
+  test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1/nginx-health"]
+  interval: 10s
+  timeout: 3s
+  retries: 6
+  start_period: 10s
+  start_interval: 2s
+
+services:
+  db:
+    image: ${ZEHNBOT_REGISTRY:?}/zehnbot-db:pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: chatbot
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?set DB_PASSWORD in /opt/zehnbot/.env}
+      POSTGRES_DB: chatbotdb
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U chatbot -d chatbotdb"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    # A guard rail, not tuning: measured idle use is ~30 MB (default shared_buffers, 128 MB). The cap only
+    # stops a runaway query from starving the other applications on this 3.8 GB server.
+    mem_limit: 1g
+    networks: [zehnbot]
+    logging: *logging
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    # rate-limit counters only: nothing to persist, and never more than 64 MB
+    command: ["redis-server", "--save", "", "--appendonly", "no", "--maxmemory", "64mb", "--maxmemory-policy", "allkeys-lru"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    mem_limit: 128m
+    networks: [zehnbot]
+    logging: *logging
+
+  # The stock nginx image. Its configuration is ./edge (= /opt/zehnbot/edge), which each deploy updates
+  # before reloading nginx gracefully; the container itself is only replaced when this version changes.
+  edge:
+    image: nginx:1.30-alpine
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${ZEHNBOT_PORT:-3001}:80"
+    volumes:
+      - ./edge:/etc/nginx/conf.d:ro
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1/edge-health"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 5s
+      start_interval: 1s
+    mem_limit: 64m
+    networks: [zehnbot, candidate]
+    logging: *logging
+
+  # ---------------------------------------------------------------- production
+  backend:
+    <<: *backend
+    image: ${ZEHNBOT_REGISTRY:?}/zehnbot-backend:${RELEASE:?}
+    environment:
+      <<: *backend-env
+      # one vCPU: two workers keep the API answering while one parses an upload or runs a crawl
+      WEB_CONCURRENCY: ${WEB_CONCURRENCY:-2}
+    # measured ~190 MB with two workers; parsing a 10 MB PDF or a crawl adds a few hundred
+    mem_limit: 1g
+    networks: [zehnbot]
+
+  admin:
+    image: ${ZEHNBOT_REGISTRY:?}/zehnbot-admin:${RELEASE:?}
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${ZEHNBOT_DIRECT_PORT:-3003}:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck: *web-health
+    mem_limit: 128m
+    networks: [zehnbot]
+    logging: *logging
+
+  # ---------------------------------------------------------------- candidate (only during a deploy)
+  # Started by deploy.sh with the NEW release, against the same database, and checked before production
+  # is touched. While production restarts, the edge sends visitors here. Removed when the deploy ends.
+  backend-candidate:
+    <<: *backend
+    profiles: [candidate]
+    image: ${ZEHNBOT_REGISTRY:?}/zehnbot-backend:${CANDIDATE_RELEASE:-none}
+    restart: "no"
+    environment:
+      <<: *backend-env
+      WEB_CONCURRENCY: "1"
+    mem_limit: 768m
+    networks:
+      zehnbot: {}
+      candidate:
+        aliases: [backend]      # the web image proxies to "backend": on this network, that is the candidate
+
+  admin-candidate:
+    profiles: [candidate]
+    image: ${ZEHNBOT_REGISTRY:?}/zehnbot-admin:${CANDIDATE_RELEASE:-none}
+    restart: "no"
+    ports:
+      - "127.0.0.1:${ZEHNBOT_CANDIDATE_PORT:-3002}:80"
+    depends_on:
+      backend-candidate:
+        condition: service_healthy
+    healthcheck: *web-health
+    mem_limit: 128m
+    networks: [candidate]        # and ONLY this one, so it can never reach the production API by name
+    logging: *logging
+
+networks:
+  zehnbot:
+    name: zehnbot
+  candidate:
+    name: zehnbot-candidate
+
+volumes:
+  pgdata:
+    name: zehnbot_pgdata         # a fixed name: the data never depends on a folder or project name

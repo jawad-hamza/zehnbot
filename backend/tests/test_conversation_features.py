@@ -276,13 +276,13 @@ def test_name_then_email_in_separate_messages_is_one_complete_lead(api, db, two_
     """The real conversation that exposed the gap: the bot asks, the visitor answers in two steps."""
     reply_with(monkeypatch, "Perfect, just drop your name and an email or WhatsApp number here.")
     say(api, "how can i order ?")
-    reply_with(monkeypatch, "Thanks, Jawad, got your name. What's the best email for you?")
-    assert say(api, "Jawad Hamza").json()["lead_captured"] is False        # a name alone is not a lead
+    reply_with(monkeypatch, "Thanks, Omar, got your name. What's the best email for you?")
+    assert say(api, "Omar Siddiqui").json()["lead_captured"] is False        # a name alone is not a lead
     reply_with(monkeypatch, "Great, that's everything we need.")
-    assert say(api, "jawwadhamzas@gmail.com").json()["lead_captured"] is True
+    assert say(api, "omar.siddiqui@example.com").json()["lead_captured"] is True
 
     lead = db.query(Lead).one()
-    assert (lead.name, lead.email, lead.source) == ("Jawad Hamza", "jawwadhamzas@gmail.com", "chat")
+    assert (lead.name, lead.email, lead.source) == ("Omar Siddiqui", "omar.siddiqui@example.com", "chat")
 
 
 def test_email_first_and_name_afterwards_also_completes_the_lead(api, db, two_tenants, monkeypatch):

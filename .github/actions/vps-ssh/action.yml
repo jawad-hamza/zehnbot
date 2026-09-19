@@ -1,0 +1,43 @@
+name: Connect to the VPS
+description: >
+  Sets up an SSH host alias "vps" from repository secrets. The server's host key must be supplied
+  (VPS_KNOWN_HOSTS) and is enforced, so a job can never be pointed at an impostor machine.
+inputs:
+  host:        { required: true,  description: "VPS address (an IP: SSH does not go through Cloudflare)" }
+  port:        { required: false, default: "22", description: "SSH port" }
+  user:        { required: true,  description: "the account that deploys (in the docker group)" }
+  key:         { required: true,  description: "private key of the dedicated deploy key" }
+  known-hosts: { required: true,  description: "the server's host key line(s)" }
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        HOST: ${{ inputs.host }}
+        PORT: ${{ inputs.port }}
+        USER_NAME: ${{ inputs.user }}
+        KEY: ${{ inputs.key }}
+        KNOWN_HOSTS: ${{ inputs.known-hosts }}
+      run: |
+        set -euo pipefail
+        for v in HOST USER_NAME KEY KNOWN_HOSTS; do
+          [[ -n "${!v}" ]] || { echo "::error::The VPS secret for $v is empty. See DEPLOYMENT.md, 'GitHub secrets'."; exit 1; }
+        done
+        install -d -m 700 ~/.ssh
+        printf '%s\n' "$KEY" > ~/.ssh/vps_key && chmod 600 ~/.ssh/vps_key
+        printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts && chmod 644 ~/.ssh/known_hosts
+        cat > ~/.ssh/config <<EOF
+        Host vps
+          HostName $HOST
+          Port ${PORT:-22}
+          User $USER_NAME
+          IdentityFile ~/.ssh/vps_key
+          IdentitiesOnly yes
+          StrictHostKeyChecking yes
+          BatchMode yes
+          ConnectTimeout 20
+          ServerAliveInterval 30
+          ServerAliveCountMax 6
+        EOF
+        chmod 600 ~/.ssh/config
+        ssh vps true && echo "connected to the VPS"

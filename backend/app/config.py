@@ -209,6 +209,8 @@ class Settings(BaseSettings):
             problems.append("SECRET_KEY must be a random string of at least 32 characters")
         if not self.ENCRYPTION_KEY:
             problems.append("ENCRYPTION_KEY is not set (tenant API keys cannot be stored)")
+        if (self.email_enabled or self.google_enabled) and not self.public_base_url.startswith("https://"):
+            problems.append("PUBLIC_BASE_URL must be the public https:// address (it goes into emailed links and the Google sign-in redirect)")
         else:
             from cryptography.fernet import Fernet
             try:

@@ -14,6 +14,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from alembic import command
 from alembic.config import Config
+from alembic.runtime.migration import MigrationContext
+from alembic.script import ScriptDirectory
 from sqlalchemy import inspect, text
 
 from app.config import settings
@@ -49,6 +51,29 @@ def ensure_semantic_search() -> None:
             print(f"[migrate] EMBEDDING_DIMENSIONS changed ({existing} -> {wanted}): run scripts/embed_backfill.py")
 
 
+def revision_is_known(script: ScriptDirectory, revision: str) -> bool:
+    try:
+        return script.get_revision(revision) is not None
+    except Exception:          # alembic raises when a revision id is not in this code's migration chain
+        return False
+
+
+def database_is_ahead(cfg: Config) -> bool:
+    """True when the database was migrated by a NEWER release than this one: a rollback.
+
+    Upgrading is then impossible (alembic cannot find the newer revision) and unnecessary: migrations
+    are additive, so this older code runs on the newer schema. Refusing to start here would make
+    every rollback across a release that contained a migration fail."""
+    with engine.connect() as conn:
+        current = MigrationContext.configure(conn).get_current_revision()
+    script = ScriptDirectory.from_config(cfg)
+    if current is None or revision_is_known(script, current):
+        return False
+    print(f"[migrate] The database is at revision {current}, newer than this release (head {script.get_current_head()}). "
+          "This is a rollback: the schema is left as it is and the app starts on it.")
+    return True
+
+
 def main() -> None:
     cfg = Config(os.path.join(BACKEND_DIR, "alembic.ini"))
     cfg.set_main_option("script_location", os.path.join(BACKEND_DIR, "alembic"))
@@ -58,7 +83,8 @@ def main() -> None:
         print("[migrate] Existing pre-migration database found; stamping baseline 0001")
         command.stamp(cfg, "0001")
 
-    command.upgrade(cfg, "head")
+    if not database_is_ahead(cfg):
+        command.upgrade(cfg, "head")
     ensure_semantic_search()
 
     # A crawl that was running when the server stopped will never finish

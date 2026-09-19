@@ -1,0 +1,55 @@
+# Actions > Rollback > Run workflow. Puts production back on an earlier release that is still on the
+# server (the previous one by default). The database is not touched. See DEPLOYMENT.md, "Rollback".
+name: Rollback
+
+on:
+  workflow_dispatch:
+    inputs:
+      release:
+        description: "Release to go back to (a commit id listed in /opt/zehnbot/releases). Leave empty for the previous release."
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  rollback:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    environment:
+      name: production
+      url: https://bot.zehnox.com
+    concurrency:
+      group: zehnbot-production        # the same queue as deployments: never both at once
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check the input
+        env:
+          RELEASE: ${{ inputs.release }}
+        run: |
+          [[ "$RELEASE" =~ ^([0-9a-f]{7,40})?$ ]] || { echo "::error::A release is a commit id (7 to 40 characters, 0-9 a-f), or empty."; exit 1; }
+
+      - uses: ./.github/actions/vps-ssh
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          port: ${{ secrets.VPS_PORT }}
+          user: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          known-hosts: ${{ secrets.VPS_KNOWN_HOSTS }}
+
+      - name: Before
+        run: |
+          ssh vps 'cd /opt/zehnbot && echo "serving:   $(basename "$(readlink -f current)")"; echo "previous:  $(basename "$(readlink -f previous 2>/dev/null)" 2>/dev/null)"; echo "on server: $(ls releases | tr "\n" " ")"'
+
+      - name: Roll back
+        env:
+          RELEASE: ${{ inputs.release }}
+        run: ssh vps "/opt/zehnbot/current/rollback.sh $RELEASE"
+
+      - name: After
+        if: always()
+        run: |
+          ssh vps 'echo "serving: $(basename "$(readlink -f /opt/zehnbot/current)")"; tail -3 /opt/zehnbot/deploy.log'

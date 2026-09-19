@@ -1,17 +1,15 @@
-.git
-.gitignore
-.env
-.env.*
-.claude
-venv
-.venv
-**/__pycache__
-**/*.pyc
-**/.pytest_cache
-**/node_modules
-admin-dashboard/dist
-widget/dist
-backend/tests
-test.html
-*.md
-backups
+# The backend image is built with the repository root as its context (it needs backend/ and widget/).
+# Everything else stays out: secrets, database dumps, virtualenvs, git history.
+*
+!backend/
+!widget/
+backend/tests/
+backend/static/widget.js
+backend/**/__pycache__/
+backend/**/*.pyc
+backend/.pytest_cache/
+widget/node_modules/
+widget/dist/
+widget/test/
+**/.env
+**/.env.*
