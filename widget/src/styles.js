@@ -86,6 +86,27 @@ export function buildStyles(config) {
       outline-offset: 2px;
       box-shadow: 0 0 0 5px var(--cb-theme);
     }
+    /* The owner's own launcher pictures: no circle, no shadow, just the picture */
+    #cb-launcher.cb-has-image {
+      width: 64px;
+      height: 64px;
+      padding: 0;
+      border-radius: 0;
+      background: transparent;
+      box-shadow: none;
+    }
+    #cb-launcher.cb-has-image:hover { box-shadow: none; }
+    #cb-launcher.cb-has-image:focus-visible { border-radius: 12px; }
+    .cb-img { display: none; width: 100%; height: 100%; object-fit: contain; pointer-events: none; user-select: none; }
+    .cb-img--normal { display: block; }
+    #cb-launcher.cb-has-hover:hover .cb-img--normal,
+    #cb-launcher.cb-has-hover:focus-visible .cb-img--normal { display: none; }
+    #cb-launcher.cb-has-hover:hover .cb-img--hover,
+    #cb-launcher.cb-has-hover:focus-visible .cb-img--hover { display: block; }
+    /* While the chat is open (after a click) the open picture wins over both */
+    #cb-launcher.cb-has-open[aria-expanded="true"] .cb-img--normal,
+    #cb-launcher.cb-has-open[aria-expanded="true"] .cb-img--hover { display: none; }
+    #cb-launcher.cb-has-open[aria-expanded="true"] .cb-img--open { display: block; }
     @keyframes cb-launcher-pop {
       from { transform: scale(0); opacity: 0; }
       to   { transform: scale(1); opacity: 1; }

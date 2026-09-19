@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api, errorDetail } from "../api/client";
 import { IconWand } from "./icons";
+import LauncherPictures from "./LauncherPictures";
 import type { AiProvider, Client, ClientPayload, Tenant } from "../types";
 
 interface Props {
@@ -62,6 +63,7 @@ export default function ClientForm({ initial = {}, onSubmit, loading, submitLabe
     widget_position: initial.widget_position ?? "bottom-right",
     font_family: initial.font_family ?? "",
     custom_css: initial.custom_css ?? "",
+    custom_js: initial.custom_js ?? "",
     notification_sound: initial.notification_sound ?? true,
     ai_provider: initial.ai_provider ?? "deepseek",
     ai_model: initial.ai_model ?? "",
@@ -113,6 +115,7 @@ export default function ClientForm({ initial = {}, onSubmit, loading, submitLabe
       ai_base_url: currentProvider.needs_base_url ? form.ai_base_url.trim() || null : null,
       font_family: form.font_family.trim() || null,
       custom_css: form.custom_css.trim() || null,
+      custom_js: form.custom_js.trim() || null,
     };
     // Typed a key = replace it. Ticked "remove" = send "". Otherwise leave the field out so the stored key survives.
     if (ai_api_key.trim()) payload.ai_api_key = ai_api_key.trim();
@@ -271,6 +274,8 @@ export default function ClientForm({ initial = {}, onSubmit, loading, submitLabe
           </div>
         </div>
 
+        <LauncherPictures clientUuid={initial.id} initial={initial.launcher_images ?? {}} />
+
         <label style={{ display: "flex", alignItems: "flex-start", gap: 8, marginTop: 12, fontSize: 13, color: "var(--fg-2)", cursor: "pointer" }}>
           <input type="checkbox" checked={form.notification_sound} onChange={(e) => setForm((f) => ({ ...f, notification_sound: e.target.checked }))} style={{ marginTop: 2 }} />
           <span>
@@ -311,6 +316,22 @@ export default function ClientForm({ initial = {}, onSubmit, loading, submitLabe
           />
           <span style={{ fontSize: 12, color: "var(--subtle-fg)" }}>
             Injected into the widget's style tag. Use <code>#cb-launcher</code>, <code>#cb-panel</code>, <code>.cb-msg--user</code>, etc.
+          </span>
+        </div>
+
+        <div style={{ ...field, marginTop: 12 }}>
+          <label style={label} htmlFor="bot-custom-js">Custom JavaScript (advanced)</label>
+          <textarea
+            id="bot-custom-js"
+            style={{ ...textarea, fontFamily: 'ui-monospace, Menlo, monospace', fontSize: 12, minHeight: 120 }}
+            value={form.custom_js}
+            onChange={set("custom_js")}
+            maxLength={20000}
+            spellCheck={false}
+            placeholder={`// Runs on your website when the chat loads. You get one object, zehnbot:\n//   zehnbot.open(), zehnbot.close(), zehnbot.toggle(), zehnbot.isOpen()\n//   zehnbot.on("open" | "close" | "message", fn)\n//   zehnbot.root  (the widget's shadow root)\nzehnbot.on("open", () => window.gtag && gtag("event", "chat_open"));`}
+          />
+          <span style={{ fontSize: 12, color: "var(--subtle-fg)" }}>
+            Runs only on your own website, never in this dashboard or its preview. If your site's Content-Security-Policy blocks inline code it will not run, and the chat still works.
           </span>
         </div>
       </div>

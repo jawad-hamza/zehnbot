@@ -11,6 +11,9 @@ export interface Client {
   widget_position: string;
   font_family: string | null;
   custom_css: string | null;
+  custom_js: string | null;
+  /** slot ("normal" | "hover" | "open") -> picture URL, for the ones that are set */
+  launcher_images: Partial<Record<LauncherSlot, string>>;
   /** Soft chirp in the widget when the bot replies (visitors can mute it themselves). */
   notification_sound: boolean;
   ai_provider: string;
@@ -166,3 +169,5 @@ export interface Lead {
   conversation_id: string | null;
   captured_at: string;
 }
+
+export type LauncherSlot = "normal" | "hover" | "open";

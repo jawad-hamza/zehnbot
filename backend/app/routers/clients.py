@@ -26,7 +26,7 @@ from app.services.tenant_service import enforce_bot_limit
 router = APIRouter()
 
 # Optional columns a PUT may blank out by sending null
-_CLEARABLE = {"ai_model", "ai_base_url", "font_family", "custom_css"}
+_CLEARABLE = {"ai_model", "ai_base_url", "font_family", "custom_css", "custom_js"}
 
 
 class ProviderInfo(BaseModel):

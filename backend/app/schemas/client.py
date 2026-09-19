@@ -1,10 +1,11 @@
 import uuid
 from datetime import datetime
-from typing import Literal, Optional
+from typing import Dict, Literal, Optional
 
 from pydantic import BaseModel, Field, field_validator
 
 from app.services.crypto_service import secret_hint
+from app.services.media_service import launcher_image_urls
 from app.services.providers import PROVIDERS
 
 Position = Literal["bottom-right", "bottom-left"]
@@ -34,6 +35,7 @@ class ClientCreate(BaseModel):
     widget_position: Position = "bottom-right"
     font_family: Optional[str] = Field(default=None, max_length=200)
     custom_css: Optional[str] = Field(default=None, max_length=20000)
+    custom_js: Optional[str] = Field(default=None, max_length=20000)
     notification_sound: bool = True
     ai_provider: str = "deepseek"
     ai_model: Optional[str] = Field(default=None, max_length=100)
@@ -56,6 +58,7 @@ class ClientUpdate(BaseModel):
     widget_position: Optional[Position] = None
     font_family: Optional[str] = Field(default=None, max_length=200)
     custom_css: Optional[str] = Field(default=None, max_length=20000)
+    custom_js: Optional[str] = Field(default=None, max_length=20000)
     notification_sound: Optional[bool] = None
     ai_provider: Optional[str] = None
     ai_model: Optional[str] = Field(default=None, max_length=100)
@@ -80,6 +83,9 @@ class ClientResponse(BaseModel):
     widget_position: str
     font_family: Optional[str] = None
     custom_css: Optional[str] = None
+    custom_js: Optional[str] = None
+    # slot ("normal" | "hover" | "open") -> URL of the picture, for the ones that are set
+    launcher_images: Dict[str, str] = {}
     notification_sound: bool = True
     ai_provider: str
     ai_model: Optional[str] = None
@@ -106,6 +112,8 @@ class ClientResponse(BaseModel):
             widget_position=client.widget_position,
             font_family=client.font_family,
             custom_css=client.custom_css,
+            custom_js=client.custom_js,
+            launcher_images=launcher_image_urls(client),
             notification_sound=client.notification_sound,
             ai_provider=client.ai_provider,
             ai_model=client.ai_model,

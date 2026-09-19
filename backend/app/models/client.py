@@ -22,6 +22,8 @@ class Client(Base):
     widget_position = Column(String(16), nullable=False, default="bottom-right")
     font_family = Column(String(200), nullable=True)
     custom_css = Column(Text, nullable=True)
+    # Runs on the owner's own website only, never on the platform's pages (see widget config)
+    custom_js = Column(Text, nullable=True)
     notification_sound = Column(Boolean, nullable=False, default=True, server_default=true())   # soft chirp when the bot replies
     # A provider id from app/services/providers.py. Only used when the bot has its own key;
     # without one, the platform's provider answers.
@@ -38,3 +40,4 @@ class Client(Base):
     knowledge_chunks = relationship("KnowledgeChunk", back_populates="client", cascade="all, delete-orphan")
     conversations = relationship("Conversation", back_populates="client", cascade="all, delete-orphan")
     leads = relationship("Lead", back_populates="client", cascade="all, delete-orphan")
+    media = relationship("BotMedia", back_populates="client", cascade="all, delete-orphan", passive_deletes=True)

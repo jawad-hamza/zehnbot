@@ -7,6 +7,23 @@ const ICON_ATTRS = `width="18" height="18" viewBox="0 0 24 24" fill="none" strok
 const SOUND_ON_ICON = `<svg ${ICON_ATTRS}><path d="M11 5 6 9H2v6h4l5 4V5z"></path><path d="M15.5 8.5a5 5 0 0 1 0 7"></path><path d="M18.5 5.5a9 9 0 0 1 0 13"></path></svg>`;
 const SOUND_OFF_ICON = `<svg ${ICON_ATTRS}><path d="M11 5 6 9H2v6h4l5 4V5z"></path><path d="m22 9-6 6"></path><path d="m16 9 6 6"></path></svg>`;
 
+/** Launcher picture URLs from the config, made absolute against the widget's own server. Only our media path is accepted. */
+function launcherPictures(config) {
+  const out = {};
+  const given = config.launcher_images && typeof config.launcher_images === "object" ? config.launcher_images : {};
+  for (const slot of ["normal", "hover", "open"]) {
+    const path = given[slot];
+    if (typeof path === "string" && path.startsWith("/api/public/media/")) {
+      try {
+        out[slot] = new URL(path, config.server_origin || location.origin).href;
+      } catch {
+        /* a malformed origin: no picture, the default icon shows */
+      }
+    }
+  }
+  return out;
+}
+
 export function buildWidget(config) {
   // One host element on the page; everything else lives in its shadow root, so the customer's
   // CSS cannot break the widget and the widget's ids/classes cannot collide with the page's.
@@ -64,7 +81,24 @@ export function buildWidget(config) {
   launcher.type = "button";
   launcher.setAttribute("aria-label", "Open chat");
   launcher.setAttribute("aria-expanded", "false");
-  launcher.innerHTML = CHAT_ICON;
+  const pictures = launcherPictures(config);
+  if (pictures.normal) {
+    // The owner's own pictures (GIF, PNG or SVG): one at rest, optionally one on hover and one while open.
+    // All are loaded up front so switching is instant; CSS decides which one shows.
+    launcher.classList.add("cb-has-image");
+    for (const slot of ["normal", "hover", "open"]) {
+      if (!pictures[slot]) continue;
+      if (slot !== "normal") launcher.classList.add("cb-has-" + slot);
+      const img = document.createElement("img");
+      img.className = "cb-img cb-img--" + slot;
+      img.src = pictures[slot];
+      img.alt = "";
+      img.draggable = false;
+      launcher.appendChild(img);
+    }
+  } else {
+    launcher.innerHTML = CHAT_ICON;
+  }
   root.appendChild(launcher);
 
   const $ = (id) => root.getElementById(id);
@@ -182,6 +216,8 @@ export function buildWidget(config) {
 
   return {
     host,
+    root,
+    launcher,
     panel,
     input: inputEl,
     sendBtn,

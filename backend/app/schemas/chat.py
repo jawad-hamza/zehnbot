@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Dict, Optional
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -47,4 +47,6 @@ class WidgetConfig(BaseModel):
     widget_position: str = "bottom-right"
     font_family: Optional[str] = None
     custom_css: Optional[str] = None
+    custom_js: Optional[str] = None
+    launcher_images: Dict[str, str] = {}
     notification_sound: bool = True

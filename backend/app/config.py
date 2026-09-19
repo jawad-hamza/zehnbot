@@ -115,6 +115,8 @@ class Settings(BaseSettings):
     RATE_STYLE_MATCH_PER_USER_PER_HOUR: int = 20
     # The landing page's live demo spends the demo bot owner's AI budget, so each visitor gets a daily allowance
     RATE_LANDING_DEMO_PER_IP_PER_DAY: int = 20
+    # Same for the support chat in the corner of our own pages (the bot is chosen in the super admin's Settings)
+    RATE_SUPPORT_BOT_PER_IP_PER_DAY: int = 50
 
     LOG_LEVEL: str = "INFO"
 

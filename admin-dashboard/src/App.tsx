@@ -16,11 +16,13 @@ import OverviewPage from "./pages/OverviewPage";
 import HomeRoute from "./pages/HomeRoute";
 import EnquiriesPage from "./pages/EnquiriesPage";
 import { AuthCallbackPage, VerifyEmailPage } from "./pages/AuthLandingPages";
+import SupportWidget from "./components/SupportWidget";
 
 
 export default function App() {
   return (
     <BrowserRouter>
+      <SupportWidget />
       <Routes>
         <Route path="/" element={<HomeRoute />} />
         <Route path="/login" element={<LoginPage />} />

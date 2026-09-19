@@ -212,6 +212,41 @@ async function send(page, text) {
   check("...and links on the white panel use a deepened version of it", !/--cb-theme-text:\s*#cefd21/.test(css(page)) && /--cb-theme-text:\s*#[0-9a-f]{6}/.test(css(page)));
   check("a font chosen in the dashboard wins over the page's", /--cb-font:\s*"Work Sans"/.test(css(page)));
 
+  console.log("launcher pictures (normal, hover, open)");
+  const media = (slot) => `/api/public/media/acme-bot/${slot}?v=abc123`;
+  page = await load(null, { configOverride: { launcher_images: { normal: media("normal"), hover: media("hover"), open: media("open") } } });
+  let pics = [...page.$("cb-launcher").querySelectorAll("img")];
+  check("each picture is loaded from the widget's own server", pics.length === 3 && pics.every((img) => img.src.startsWith("https://chat.example/api/public/media/acme-bot/")), pics.map((i) => i.src));
+  check("the pictures replace the default icon and are decorative (the button keeps its label)",
+    page.$("cb-launcher").querySelector("svg") === null && pics.every((img) => img.alt === "") && page.$("cb-launcher").getAttribute("aria-label") === "Open chat");
+  check("the launcher knows which states have a picture", ["cb-has-image", "cb-has-hover", "cb-has-open"].every((c) => page.$("cb-launcher").classList.contains(c)));
+  check("CSS swaps them: hover picture on hover, open picture while the chat is open", /cb-has-hover:hover \.cb-img--hover/.test(css(page)) && /cb-has-open\[aria-expanded="true"\] \.cb-img--open/.test(css(page)));
+  page = await load(null, { configOverride: { launcher_images: { hover: media("hover") } } });
+  check("without a normal picture, the default icon stays", page.$("cb-launcher").querySelector("svg") !== null && !page.$("cb-launcher").querySelector("img"));
+  page = await load(null, { configOverride: { launcher_images: { normal: "https://evil.example/track.gif", open: "javascript:alert(1)" } } });
+  check("a picture from anywhere else is ignored", !page.$("cb-launcher").querySelector("img") && page.errors.length === 0);
+
+  console.log("the bot owner's own JavaScript");
+  const script = `
+    window.__seen = [];
+    zehnbot.on("open", () => window.__seen.push("open"));
+    zehnbot.on("close", () => window.__seen.push("close"));
+    zehnbot.on("message", (m) => window.__seen.push(m.role + ":" + m.text.slice(0, 7)));
+    zehnbot.root.getElementById("cb-botname").dataset.touched = "yes";
+    zehnbot.on("open", () => { throw new Error("owner bug"); });
+  `;
+  page = await load(null, { configOverride: { custom_js: script } });
+  check("it runs, and can reach into the widget", page.$("cb-botname").dataset.touched === "yes", page.warnings);
+  page.$("cb-launcher").click();
+  await send(page, "hello there");
+  page.$("cb-close").click();
+  check("it hears open, each message, and close", JSON.stringify(page.w.__seen) === JSON.stringify(["open", "user:hello t", "assistant:We have", "close"]), page.w.__seen);
+  check("a listener that throws does not break the chat", page.errors.length === 0 && page.warnings.some((t) => t.includes('custom "open" listener')));
+  page = await load(null, { configOverride: { custom_js: "this is not javascript (" } });
+  check("broken code: the chat still appears and the console says why", !!page.root && page.errors.length === 0 && page.warnings.some((t) => t.includes("custom JavaScript did not run")), page.warnings);
+  page.$("cb-launcher").click();
+  check("...and still opens", page.$("cb-panel").classList.contains("cb-open"));
+
   console.log("websites that are not allowed");
   page = await load(null, { config: "forbidden" });
   check("the widget does not appear at all on a website the bot is not set up for", page.host === null && page.errors.length === 0, page.errors);

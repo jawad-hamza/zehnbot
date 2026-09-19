@@ -16,6 +16,8 @@ from app.routers.leads import public_router as leads_public, admin_router as lea
 from app.routers.enquiries import public_router as enquiries_public, admin_router as enquiries_admin
 from app.routers.pricing import public_router as pricing_public, admin_router as pricing_admin
 from app.routers.platform_ai import router as platform_ai_admin
+from app.routers.media import public_router as media_public, admin_router as media_admin
+from app.routers.support import public_router as support_public, admin_router as support_admin
 
 logging.basicConfig(
     level=settings.LOG_LEVEL.upper(),
@@ -117,6 +119,8 @@ def create_app() -> FastAPI:
     app.include_router(leads_public,        prefix="/api/leads",  tags=["leads"])
     app.include_router(enquiries_public,    prefix="/api/contact", tags=["contact"])
     app.include_router(pricing_public,      prefix="/api/public",  tags=["public"])
+    app.include_router(media_public,        prefix="/api/public",  tags=["public"])
+    app.include_router(support_public,      prefix="/api/public",  tags=["public"])
 
     # Dashboard endpoints (JWT required, scoped to the caller's tenant)
     app.include_router(clients.router,          prefix="/api/admin", tags=["admin"])
@@ -125,12 +129,14 @@ def create_app() -> FastAPI:
     app.include_router(leads_admin,             prefix="/api/admin", tags=["admin"])
     app.include_router(analytics.router,        prefix="/api/admin", tags=["admin"])
     app.include_router(overview.router,         prefix="/api/admin", tags=["admin"])
+    app.include_router(media_admin,             prefix="/api/admin", tags=["admin"])
 
     # Platform operator endpoints (super admin only)
     app.include_router(tenants.router,          prefix="/api/admin", tags=["superadmin"])
     app.include_router(enquiries_admin,         prefix="/api/admin", tags=["superadmin"])
     app.include_router(pricing_admin,           prefix="/api/admin", tags=["superadmin"])
     app.include_router(platform_ai_admin,       prefix="/api/admin", tags=["superadmin"])
+    app.include_router(support_admin,           prefix="/api/admin", tags=["superadmin"])
 
     # Serve built widget bundle at /static/widget.js
     static_dir = os.path.join(os.path.dirname(__file__), "..", "static")

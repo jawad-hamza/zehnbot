@@ -8,6 +8,7 @@ from app.config import settings
 from app.dependencies import get_db
 from app.models.client import Client
 from app.schemas.chat import ChatRequest, ChatResponse
+from app.routers.support import support_client_id
 from app.services import rate_limit
 from app.services.chat_service import prepare_turn, process_message, stream_events
 from app.services.client_service import enforce_widget_origin, is_platform_origin, require_active_client
@@ -24,10 +25,17 @@ def _admit(body: ChatRequest, request: Request, origin: Optional[str], db: Sessi
     # The public demo on the landing page: anyone may talk to this bot from our own pages, on its
     # owner's budget. The bot's real website (a different origin) is not touched by this allowance.
     demo_bot = settings.LANDING_DEMO_BOT.strip()
-    if demo_bot and body.client_id == demo_bot and is_platform_origin(origin, request):
+    on_our_pages = is_platform_origin(origin, request)
+    if demo_bot and body.client_id == demo_bot and on_our_pages:
         rate_limit.enforce(
             "demo-ip-day", rate_limit.client_ip(request), settings.RATE_LANDING_DEMO_PER_IP_PER_DAY, 86400,
             "That is the demo's limit for today. Come back tomorrow, or set up a bot of your own.",
+        )
+    # The support chat in the corner of our pages: open to anyone, so it gets a daily allowance too
+    elif on_our_pages and body.client_id == support_client_id(db):
+        rate_limit.enforce(
+            "support-ip-day", rate_limit.client_ip(request), settings.RATE_SUPPORT_BOT_PER_IP_PER_DAY, 86400,
+            "That is the support chat's limit for today. Email us, or use the contact form.",
         )
 
     client = require_active_client(body.client_id, db)

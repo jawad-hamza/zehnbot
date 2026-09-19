@@ -31,8 +31,10 @@ const MAX_STORED_MESSAGES = 60;
 
   // Derive API base from the script's own origin so the widget calls back to
   // the server that hosts it, regardless of the site it's embedded on.
+  let serverOrigin = location.origin;
   try {
-    setApiBase(new URL(srcUrl).origin + "/api");
+    serverOrigin = new URL(srcUrl).origin;
+    setApiBase(serverOrigin + "/api");
   } catch {
     // fall through to default
   }
@@ -40,9 +42,11 @@ const MAX_STORED_MESSAGES = 60;
   const boot = () =>
     fetchConfig(clientId)
       .then((config) => {
+        config.server_origin = serverOrigin;
         const ui = buildWidget(config);
         document.body.appendChild(ui.host);
-        attachHandlers(ui, clientId, config);
+        const events = attachHandlers(ui, clientId, config);
+        runOwnerScript(config, ui, events, serverOrigin);
       })
       .catch((err) => {
         // Nothing is rendered: a chat that cannot work should not appear. The reason goes to the
@@ -71,6 +75,50 @@ const MAX_STORED_MESSAGES = 60;
   if (document.body) boot();
   else document.addEventListener("DOMContentLoaded", boot, { once: true });
 })();
+
+/**
+ * The bot owner's own JavaScript (dashboard → Bots → Edit → Custom JavaScript). It gets one argument,
+ * `zehnbot`: open(), close(), toggle(), isOpen(), on("open" | "close" | "message", fn), and `root`, the
+ * widget's shadow root, for anything else. It runs on the owner's website only: the server does not send
+ * it to the platform's own pages, and it is skipped here too if the page is on the widget's own server.
+ */
+function runOwnerScript(config, ui, events, serverOrigin) {
+  const code = typeof config.custom_js === "string" ? config.custom_js.trim() : "";
+  if (!code || location.origin === serverOrigin) return;
+  const zehnbot = Object.freeze({
+    root: ui.root,
+    open: () => ui.setOpen(true),
+    close: () => ui.setOpen(false),
+    toggle: () => ui.setOpen(!ui.isOpen()),
+    isOpen: () => ui.isOpen(),
+    on: (name, fn) => events.on(name, fn),
+  });
+  try {
+    new Function("zehnbot", code)(zehnbot);   // eslint-disable-line no-new-func
+  } catch (err) {
+    // A site whose Content-Security-Policy forbids it, or a bug in the owner's code: the chat keeps working
+    console.warn("[ChatBot] The bot's custom JavaScript did not run:", err && err.message ? err.message : err);
+  }
+}
+
+/** A tiny event emitter for the owner's script. A listener that throws never breaks the chat. */
+function emitter() {
+  const listeners = {};
+  return {
+    on(name, fn) {
+      if (typeof fn === "function") (listeners[name] = listeners[name] || []).push(fn);
+    },
+    emit(name, detail) {
+      (listeners[name] || []).forEach((fn) => {
+        try {
+          fn(detail);
+        } catch (err) {
+          console.warn(`[ChatBot] A custom "${name}" listener failed:`, err);
+        }
+      });
+    },
+  };
+}
 
 // crypto.randomUUID only exists on secure origins (https, localhost); many small-business sites are
 // still plain http, where getRandomValues is available and just as unguessable.
@@ -105,6 +153,7 @@ function tabStore(clientId) {
 
 function attachHandlers(ui, clientId, config) {
   const { state, save } = tabStore(clientId);
+  const events = emitter();
   const LEAD_DONE_MESSAGE = "Thanks! We'll be in touch soon.";
 
   // Pick up where the visitor left off on the previous page
@@ -119,6 +168,7 @@ function attachHandlers(ui, clientId, config) {
   ui.onOpenChange((open) => {
     state.open = open;
     save();
+    events.emit(open ? "open" : "close");
   });
 
   const remember = (role, text) => {
@@ -155,6 +205,7 @@ function attachHandlers(ui, clientId, config) {
 
     ui.appendMessage("user", text);
     remember("user", text);
+    events.emit("message", { role: "user", text });
     ui.clearInput();
     ui.setBusy(true);
     if (ui.soundOn()) primeAudio(); // inside the click, so the browser lets the reply make a sound
@@ -183,6 +234,7 @@ function attachHandlers(ui, clientId, config) {
         ui.appendMessage("assistant", reply);
       }
       remember("assistant", reply.trim());
+      events.emit("message", { role: "assistant", text: reply.trim() });
       applySummary(summary);
     } catch (err) {
       if (reply.trim()) remember("assistant", reply.trim()); // keep what did arrive
@@ -244,4 +296,6 @@ function attachHandlers(ui, clientId, config) {
       ui.leadSubmit.textContent = "Send my details";
     }
   });
+
+  return events;
 }
