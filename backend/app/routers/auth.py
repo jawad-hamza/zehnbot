@@ -16,8 +16,10 @@ from app.models.user import User
 from app.schemas.auth import (
     AuthConfig,
     ChangeCredentialsRequest,
+    ForgotPasswordRequest,
     LoginRequest,
     ResendVerificationRequest,
+    ResetPasswordRequest,
     SignupRequest,
     SignupResponse,
     TenantSummary,
@@ -29,17 +31,21 @@ from app.routers.support import demo_client_id
 from app.services import rate_limit
 from app.services import google_service
 from app.services.auth_service import (
+    RESET_PASSWORD_MINUTES,
     burn_password_check,
     create_access_token,
     create_email_verification_token,
+    create_password_reset_token,
     email_matches_token,
     has_usable_password,
     hash_password,
     read_email_verification_token,
+    read_password_reset_token,
+    reset_token_matches,
     unusable_password,
     verify_password,
 )
-from app.services.email_service import send_verification_email
+from app.services.email_service import send_password_reset_email, send_verification_email
 from app.services.tenant_service import create_tenant_with_owner, normalise_login
 from app.services.usage_service import get_usage
 
@@ -172,6 +178,60 @@ def resend_verification(body: ResendVerificationRequest, request: Request, backg
         _send_verification(user, background)
     # the same answer either way: this must not reveal who has an account
     return {"detail": "If that address is waiting to be confirmed, a new link is on its way."}
+
+
+# ---------- Forgotten password ----------
+
+# The same answer whatever happened: this endpoint must never say who has an account.
+_RESET_SENT = {"detail": "If that address has a ZehnBot login, a link to choose a new password is on its way."}
+
+
+@router.post("/forgot-password")
+def forgot_password(body: ForgotPasswordRequest, request: Request, background: BackgroundTasks, db: Session = Depends(get_db)):
+    """Emails a single-use link to choose a new password. Customers only: the operator's console
+    account is not reachable from here, and neither is any address that has no login."""
+    email = normalise_login(str(body.email))
+    rate_limit.enforce("reset-ip", rate_limit.client_ip(request), settings.RATE_LOGIN_PER_IP_PER_5MIN, 300)
+    rate_limit.enforce("reset-addr", email, settings.RATE_VERIFY_EMAIL_PER_ADDRESS_PER_HOUR, 3600,
+                       "A link was sent a moment ago. Check your inbox and spam folder.")
+    user = db.query(User).filter(User.email == email).first()
+    if (
+        user is not None
+        and user.is_active
+        and not user.is_superadmin
+        and user.tenant is not None
+        and user.tenant.is_active
+        and settings.email_enabled
+    ):
+        token = create_password_reset_token(str(user.id), user.hashed_password)
+        link = f"{settings.public_base_url}/reset-password?token={quote(token)}"
+        background.add_task(send_password_reset_email, user.email, link, RESET_PASSWORD_MINUTES)
+    return _RESET_SENT
+
+
+@router.post("/reset-password", response_model=TokenResponse)
+def reset_password(body: ResetPasswordRequest, request: Request, db: Session = Depends(get_db)):
+    """Sets the new password and signs the customer in. The link works once: it carries a fingerprint
+    of the old password, which this very change invalidates, and every other session ends with it."""
+    rate_limit.enforce("login-ip", rate_limit.client_ip(request), settings.RATE_LOGIN_PER_IP_PER_5MIN, 300)
+    expired = HTTPException(status_code=400, detail="This link is not valid any more. Ask for a new one from the log in page.")
+    try:
+        payload = read_password_reset_token(body.token)
+        user = db.query(User).filter(User.id == uuid.UUID(payload["sub"])).first()
+    except Exception:
+        raise expired
+    if user is None or not user.is_active or user.is_superadmin or not reset_token_matches(user.hashed_password, payload):
+        raise expired
+    if user.tenant is None or not user.tenant.is_active:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="This account is suspended.")
+
+    user.hashed_password = hash_password(body.new_password)
+    # Reaching the mailbox proves the address, so an account still waiting on confirmation is confirmed here
+    if user.email_verified_at is None:
+        user.email_verified_at = datetime.now(timezone.utc)
+    db.commit()
+    logger.info("password reset completed for %s", user.id)
+    return TokenResponse(access_token=create_access_token(str(user.id), user.hashed_password))
 
 
 # ---------- Sign in with Google ----------

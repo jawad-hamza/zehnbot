@@ -96,5 +96,30 @@ def read_email_verification_token(token: str) -> dict:
     return jwt.decode(token, _verify_key(), algorithms=["HS256"], options={"require": ["exp", "sub", "eml"]})
 
 
+RESET_PASSWORD_MINUTES = 60
+
+
+def _reset_key() -> str:
+    # Its own signing key, so a reset link can never be replayed as a session token, or the reverse
+    return hashlib.sha256((settings.SECRET_KEY + ":reset-password").encode()).hexdigest()
+
+
+def create_password_reset_token(user_id: str, hashed_password: str) -> str:
+    """Single use by construction: the current password is fingerprinted into the link, so the link
+    stops working the moment the password changes (including by using the link itself)."""
+    now = datetime.now(timezone.utc)
+    payload = {"sub": user_id, "pw": password_fingerprint(hashed_password),
+               "iat": now, "exp": now + timedelta(minutes=RESET_PASSWORD_MINUTES)}
+    return jwt.encode(payload, _reset_key(), algorithm="HS256")
+
+
+def read_password_reset_token(token: str) -> dict:
+    return jwt.decode(token, _reset_key(), algorithms=["HS256"], options={"require": ["exp", "sub", "pw"]})
+
+
+def reset_token_matches(hashed_password: str, payload: dict) -> bool:
+    return hmac.compare_digest(str(payload.get("pw", "")), password_fingerprint(hashed_password))
+
+
 def email_matches_token(email: str, payload: dict) -> bool:
     return hmac.compare_digest(str(payload.get("eml", "")), hashlib.sha256(email.lower().encode()).hexdigest()[:16])

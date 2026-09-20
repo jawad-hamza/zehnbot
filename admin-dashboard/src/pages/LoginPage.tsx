@@ -21,13 +21,17 @@ export default function LoginPage() {
   const [error, setError] = useState(GOOGLE_PROBLEMS[params.get("google") ?? ""] ?? "");
   const [loading, setLoading] = useState(false);
   const [unverified, setUnverified] = useState(false);
-  const [config, setConfig] = useState({ allowSignup: false, google: false });
+  const [config, setConfig] = useState({ allowSignup: false, google: false, email: false });
   const token = useAuthStore((s) => (s.kind === "operator" ? null : s.token));   // this page is the customers' door
   const setToken = useAuthStore((s) => s.setToken);
   const navigate = useNavigate();
 
   useEffect(() => {
-    api.get("/auth/config").then((r) => setConfig({ allowSignup: !!r.data.allow_signup || !!r.data.google_signup, google: !!r.data.google_enabled })).catch(() => undefined);
+    api.get("/auth/config").then((r) => setConfig({
+      allowSignup: !!r.data.allow_signup || !!r.data.google_signup,
+      google: !!r.data.google_enabled,
+      email: !!r.data.email_verification,     // a mail server is configured, so a reset link can be sent
+    })).catch(() => undefined);
   }, []);
 
   if (token) return <Navigate to="/overview" replace />;
@@ -79,10 +83,11 @@ export default function LoginPage() {
           {loading ? "Logging in…" : "Log in"}
         </button>
 
-        <p style={{ fontSize: 14, color: "var(--muted-fg)" }}>
-          {config.allowSignup
-            ? <>No account yet? <Link to="/signup">Start free</Link></>
-            : <>Forgot your password? Ask the person who manages your account to reset it.</>}
+        <p style={{ fontSize: 14, color: "var(--muted-fg)", display: "flex", gap: 12, flexWrap: "wrap" }}>
+          {config.email
+            ? <Link to="/forgot-password">Forgot your password?</Link>
+            : <span>Forgot your password? Ask the person who manages your account to reset it.</span>}
+          {config.allowSignup && <span>No account yet? <Link to="/signup">Start free</Link></span>}
         </p>
       </form>
     </AuthShell>

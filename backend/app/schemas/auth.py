@@ -33,6 +33,21 @@ class ResendVerificationRequest(BaseModel):
     email: EmailStr
 
 
+class ForgotPasswordRequest(BaseModel):
+    email: EmailStr
+
+
+class ResetPasswordRequest(BaseModel):
+    token: str = Field(min_length=10, max_length=2000)
+    new_password: str = Field(max_length=200)
+
+    @field_validator("new_password")
+    @classmethod
+    def _strong_enough(cls, v: str) -> str:
+        validate_new_password(v)
+        return v
+
+
 class SignupRequest(BaseModel):
     company_name: str = Field(min_length=2, max_length=255)
     email: EmailStr
