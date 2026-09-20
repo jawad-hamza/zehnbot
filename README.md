@@ -123,7 +123,7 @@ in `.env` still works when nothing is picked in Settings. The landing page then 
 **Talk to Zehnox.** Every "Talk to Zehnox" button (landing page, pricing, closed sign-up, a
 customer's plan line in Settings) opens a short form: a name, an email or a phone number, what they
 need. It is stored as an enquiry (`POST /api/contact`, rate limited per visitor, with a honeypot) and
-shown to the super admin under **Enquiries**, with an alert on the operator overview while any are new.
+shown to the super admin under **Enquiries**, with an alert on the operator overview while any are new. Each one records which button it came from (pricing, footer, done-for-you, a customer's settings), and the operator can answer by email from that page; replies are kept with the enquiry and mark it as contacted.
 
 **A new bot matches its website.** "Match my website's colours and font" is ticked by default on
 the new-bot form. The backend reads the site's homepage and stylesheets through the same SSRF guard

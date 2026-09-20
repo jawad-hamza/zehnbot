@@ -13,9 +13,10 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.dependencies import get_db, require_superadmin
-from app.models.enquiry import Enquiry
+from app.models.enquiry import Enquiry, EnquiryReply
 from app.models.user import User
 from app.services import rate_limit
+from app.services.email_service import send_enquiry_reply
 
 public_router = APIRouter()
 admin_router = APIRouter()
@@ -54,6 +55,16 @@ class EnquiryCreate(BaseModel):
         return self
 
 
+class ReplyResponse(BaseModel):
+    id: uuid.UUID
+    subject: str
+    body: str
+    delivered: bool
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
 class EnquiryResponse(BaseModel):
     id: uuid.UUID
     name: Optional[str]
@@ -65,6 +76,7 @@ class EnquiryResponse(BaseModel):
     source: str
     status: str
     created_at: datetime
+    replies: List[ReplyResponse] = []
 
     model_config = {"from_attributes": True}
 
@@ -77,6 +89,19 @@ class EnquiryList(BaseModel):
 
 class EnquiryUpdate(BaseModel):
     status: Literal["new", "contacted", "closed"]
+
+
+class EnquiryReplyRequest(BaseModel):
+    subject: str = Field(default="Re: your message to Zehnox", min_length=1, max_length=255)
+    message: str = Field(min_length=1, max_length=5000)
+
+    @field_validator("subject", "message")
+    @classmethod
+    def _trimmed(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("Write something first")
+        return v
 
 
 @public_router.post("", status_code=status.HTTP_201_CREATED)
@@ -161,3 +186,34 @@ def update_enquiry(enquiry_id: uuid.UUID, body: EnquiryUpdate, db: Session = Dep
 def delete_enquiry(enquiry_id: uuid.UUID, db: Session = Depends(get_db), _: User = Depends(require_superadmin)):
     db.delete(_find(enquiry_id, db))
     db.commit()
+
+
+@admin_router.post("/enquiries/{enquiry_id}/reply", response_model=EnquiryResponse)
+def reply_to_enquiry(
+    enquiry_id: uuid.UUID,
+    body: EnquiryReplyRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_superadmin),
+):
+    """Answers the person by email, without leaving the Enquiries page, and keeps a copy of what was
+    sent. A first successful reply also marks the enquiry as contacted."""
+    enquiry = _find(enquiry_id, db)
+    if not enquiry.email:
+        raise HTTPException(status_code=400, detail="This enquiry left a phone number but no email address.")
+    if not settings.email_enabled:
+        raise HTTPException(status_code=503, detail="No mail server is configured, so replies cannot be sent from here.")
+    rate_limit.enforce("enquiry-reply", str(user.id), 30, 3600, "That is a lot of replies in one hour. Try again shortly.")
+
+    # Answers come back to the operator's own address when they have one
+    reply_to = user.email if "@" in (user.email or "") else ""
+    delivered = send_enquiry_reply(enquiry.email, body.subject, body.message, reply_to=reply_to)
+    db.add(EnquiryReply(enquiry_id=enquiry.id, subject=body.subject, body=body.message,
+                        sent_by=user.id, delivered=delivered))
+    if delivered and enquiry.status == "new":
+        enquiry.status = "contacted"
+    db.commit()
+    db.refresh(enquiry)
+    if not delivered:
+        raise HTTPException(status_code=502, detail="The mail server would not take the message. It is saved here; try again in a moment.")
+    return EnquiryResponse.model_validate(enquiry)

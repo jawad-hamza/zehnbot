@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { api, errorDetail } from "../api/client";
 import { IconInbox, IconSearch } from "../components/icons";
 import { useAuthStore } from "../store/authStore";
+import EnquiryReply, { type Reply } from "../components/EnquiryReply";
 
 type Status = "new" | "contacted" | "closed";
 
@@ -16,6 +17,7 @@ interface Enquiry {
   source: string;
   status: Status;
   created_at: string;
+  replies: Reply[];
 }
 
 const FILTERS: { value: Status | ""; label: string }[] = [
@@ -42,6 +44,11 @@ export default function EnquiriesPage() {
   const [status, setStatus] = useState<Status | "">("");
   const [q, setQ] = useState("");
   const [error, setError] = useState("");
+  const [emailReady, setEmailReady] = useState(false);
+
+  useEffect(() => {
+    api.get("/auth/config").then((r) => setEmailReady(!!r.data.email_verification)).catch(() => undefined);
+  }, []);
 
   const load = useCallback(() => {
     api.get("/admin/enquiries", { params: { status: status || undefined, q: q.trim() || undefined } })
@@ -126,6 +133,7 @@ export default function EnquiriesPage() {
                     <h2 className="zb-card-title" style={{ overflowWrap: "anywhere" }}>{item.name || "No name given"}</h2>
                     <span className={`zb-badge ${BADGE[item.status]}`} style={{ textTransform: "capitalize" }}>{item.status}</span>
                     {item.plan && <span className="zb-badge zb-badge--neutral">{item.plan} plan</span>}
+                    <span className="zb-badge zb-badge--accent" title={`source: ${item.source}`}>{SOURCES[item.source] ?? item.source}</span>
                   </div>
                   <div style={{ display: "flex", gap: "4px 18px", flexWrap: "wrap", marginTop: 8, fontSize: 14 }}>
                     {item.email && <a href={`mailto:${item.email}`} style={{ overflowWrap: "anywhere" }}>{item.email}</a>}
@@ -135,10 +143,11 @@ export default function EnquiriesPage() {
                 </div>
                 <div className="zb-help" style={{ textAlign: "right" }}>
                   <div>{new Date(item.created_at).toLocaleString()}</div>
-                  <div>{SOURCES[item.source] ?? item.source}</div>
                 </div>
               </div>
               {item.message && <p style={{ marginTop: 14, color: "var(--fg-2)", lineHeight: 1.6, whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{item.message}</p>}
+              <EnquiryReply enquiryId={item.id} to={item.email} name={item.name} replies={item.replies ?? []}
+                emailReady={emailReady} onSent={load} />
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 16 }}>
                 {item.status !== "contacted" && <button type="button" className="zb-btn zb-btn--secondary zb-btn--sm" onClick={() => move(item, "contacted")}>Mark as contacted</button>}
                 {item.status !== "closed" && <button type="button" className="zb-btn zb-btn--secondary zb-btn--sm" onClick={() => move(item, "closed")}>Close</button>}
