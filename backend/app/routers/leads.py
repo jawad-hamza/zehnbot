@@ -1,13 +1,15 @@
 import csv
 import io
+import uuid
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Header, Query, Request, Response, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, Response, status
 from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.dependencies import get_db, get_owned_client
 from app.models.client import Client
+from app.models.conversation import Conversation
 from app.models.lead import Lead
 from app.schemas.lead import LeadCapture, LeadListResponse, LeadResponse
 from app.services import rate_limit
@@ -89,3 +91,25 @@ def export_leads(client: Client = Depends(get_owned_client), db: Session = Depen
         media_type="text/csv; charset=utf-8",
         headers={"Content-Disposition": f'attachment; filename="leads-{client.client_id}.csv"'},
     )
+
+
+@admin_router.delete("/clients/{client_uuid}/leads/{lead_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_lead(
+    lead_id: uuid.UUID,
+    transcript: bool = Query(default=False, description="also delete the conversation this lead came from"),
+    client: Client = Depends(get_owned_client),
+    db: Session = Depends(get_db),
+):
+    """Removes one person's details. This is how a bot's owner answers someone who asks to be
+    forgotten, without deleting the bot. With `transcript=true` the chat itself goes too."""
+    lead = db.query(Lead).filter(Lead.id == lead_id, Lead.client_id == client.id).first()
+    if lead is None:
+        raise HTTPException(status_code=404, detail="Lead not found")
+    conversation_id = lead.conversation_id
+    db.delete(lead)
+    if transcript and conversation_id is not None:
+        # deleted through the ORM, so the messages go with it whatever the database does about foreign keys
+        chat = db.query(Conversation).filter(Conversation.id == conversation_id, Conversation.client_id == client.id).first()
+        if chat is not None:
+            db.delete(chat)
+    db.commit()

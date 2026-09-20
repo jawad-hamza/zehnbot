@@ -18,6 +18,8 @@ import EnquiriesPage from "./pages/EnquiriesPage";
 import { AuthCallbackPage, VerifyEmailPage } from "./pages/AuthLandingPages";
 import SupportWidget from "./components/SupportWidget";
 import ConsoleLoginPage from "./pages/ConsoleLoginPage";
+import { ForgotPasswordPage, ResetPasswordPage } from "./pages/PasswordResetPages";
+import { PrivacyPage, TermsPage } from "./pages/LegalPages";
 
 
 export default function App() {
@@ -29,6 +31,10 @@ export default function App() {
         <Route path="/login" element={<LoginPage />} />
         <Route path="/signup" element={<SignupPage />} />
         <Route path="/console" element={<ConsoleLoginPage />} />
+        <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+        <Route path="/reset-password" element={<ResetPasswordPage />} />
+        <Route path="/privacy" element={<PrivacyPage />} />
+        <Route path="/terms" element={<TermsPage />} />
         <Route path="/verify-email" element={<VerifyEmailPage />} />
         <Route path="/auth/callback" element={<AuthCallbackPage />} />
         <Route

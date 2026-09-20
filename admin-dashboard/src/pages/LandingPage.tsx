@@ -305,6 +305,8 @@ export default function LandingPage() {
             <a href="#pricing">Pricing</a>
             <Link to="/login">Log in</Link>
             <button type="button" className="lp-foot-link" onClick={() => setContact({ source: "landing-footer" })}>Contact</button>
+            <Link to="/privacy">Privacy</Link>
+            <Link to="/terms">Terms</Link>
           </div>
           <a href={ZEHNOX_URL} target="_blank" rel="noopener noreferrer" className="zb-zehnox" aria-label="Made by Zehnox (opens zehnox.com)">
             <span aria-hidden="true">Made by</span> <ZehnoxWordmark />

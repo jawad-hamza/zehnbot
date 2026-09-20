@@ -349,3 +349,9 @@ textarea.zb-input { min-height: 88px; padding-top: 10px; padding-bottom: 10px; r
 .zb-or::before, .zb-or::after { content: ""; flex: 1; height: 1px; background: var(--border); }
 .zb-inbox { display: flex; flex-direction: column; gap: 14px; align-items: flex-start; }
 .zb-inbox .zb-stat-icon { width: 48px; height: 48px; border-radius: 14px; }
+
+/* Privacy policy and terms: plain reading rhythm (the app resets paragraph margins elsewhere) */
+.zb-legal p { margin: 0 0 12px; max-width: 68ch; }
+.zb-legal ul { margin: 0 0 12px; padding-left: 22px; max-width: 68ch; }
+.zb-legal li { margin: 0 0 7px; }
+.zb-legal p:last-child, .zb-legal ul:last-child { margin-bottom: 0; }

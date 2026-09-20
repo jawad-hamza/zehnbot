@@ -1,7 +1,7 @@
 import uuid
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -72,3 +72,22 @@ def get_messages(
         .all()
     )
     return [MessageResponse.model_validate(m) for m in msgs]
+
+
+@router.delete("/clients/{client_uuid}/conversations/{conversation_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_conversation(
+    conversation_id: uuid.UUID,
+    client: Client = Depends(get_owned_client),
+    db: Session = Depends(get_db),
+):
+    """Deletes one chat and every message in it. Leads captured from it keep their details but lose
+    the link to the transcript; delete the lead too if the person asked for everything to go."""
+    conversation = (
+        db.query(Conversation)
+        .filter(Conversation.id == conversation_id, Conversation.client_id == client.id)
+        .first()
+    )
+    if conversation is None:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    db.delete(conversation)
+    db.commit()

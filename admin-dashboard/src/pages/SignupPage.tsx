@@ -65,6 +65,9 @@ export default function SignupPage() {
           </div>
           <a className="zb-btn zb-btn--primary zb-btn--lg zb-btn--block" href="/api/auth/google/start">Sign up with Google</a>
           <p style={{ fontSize: 14, color: "var(--muted-fg)" }}>Already have an account? <Link to="/login">Log in</Link></p>
+          <p style={{ fontSize: 13, color: "var(--subtle-fg)" }}>
+            By creating an account you agree to our <Link to="/terms">terms</Link> and <Link to="/privacy">privacy policy</Link>.
+          </p>
         </div>
       ) : config?.allowed === false ? (
         <div className="zb-auth-form">
